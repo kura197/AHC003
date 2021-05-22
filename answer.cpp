@@ -93,29 +93,46 @@ ostream& operator<<(ostream& os, const Pos& pos){
 
 //// for graph analysis
 struct Field{
-    /// dist[y][x][dir] := path length from (y, x)
-    array<array<array<ll, 4>, NUM_GRID>, NUM_GRID> dist;
+    //// row[i][j] := (i, j) --> (i+1, j)
+    array<array<ll, NUM_GRID-1>, NUM_GRID> row;
+    //// col[i][j] := (i, j) --> (i, j+1)
+    array<array<ll, NUM_GRID>, NUM_GRID-1> col;
+
     ll init;
     /// for random value
     mt19937 engine;
 
     Field(ll _init) : init(_init){
-        random_device seed_gen;
-        engine = mt19937(seed_gen());
+        ////TODO:
+        //random_device seed_gen;
+        //engine = mt19937(seed_gen());
+        engine = mt19937(1);
 
-        REP(i, NUM_GRID){
-            REP(j, NUM_GRID){
-                REP(k, 4){
-                    dist[i][j][k] = init;
-                }
+        REP(r, NUM_GRID-1){
+            REP(c, NUM_GRID){
+                row[r][c] = init;
+            }
+        }
+        REP(r, NUM_GRID){
+            REP(c, NUM_GRID-1){
+                col[r][c] = init;
             }
         }
     }
 
+    //// (y, x) から dir方向の辺の重みを取得
+    ll& get_dist(int y, int x, Dir dir){
+        switch(dir){
+            case Dir::U: return row[y-1][x];
+            case Dir::D: return row[y][x];
+            case Dir::L: return col[y][x-1];
+            case Dir::R: return col[y][x];
+            default: assert(false);
+        }
+    }
+
     //// 頂点sから各頂点への経路長を計算
-    //// TODO
-    //// epsの確率で未探索の経路を選択するようにする。
-    void dijkstra(Pos s, vector<vector<ll>>& D, double eps){
+    void dijkstra(Pos s, vector<vector<ll>>& D){
         D[s.y][s.x] = 0;
         //// {distance, y, x}
         using T = tuple<ll, int, int>;
@@ -132,16 +149,8 @@ struct Field{
                 int nx = x + dx[dir];
                 if(ny < 0 || nx < 0) continue;
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
-                //ll nd = d;
-                //// TODO
-                //static uniform_real_distribution<> rand(0.0, 1.0);
-                //if(dir != 3 && dist[y][x][dir] != init && rand(engine) < eps)
-                //    nd += init;
-                //else
-                //    nd += dist[y][x][dir];
-                //nd += dist[y][x][dir];
+                ll nd = d + get_dist(y, x, int2dir(dir));
 
-                ll nd = d + dist[y][x][dir];
                 if(nd < D[ny][nx]){
                     D[ny][nx] = nd;
                     que.push(T(nd, ny, nx));
@@ -158,19 +167,18 @@ struct Field{
         const int dy[] = {1, -1, 0, 0};
         const int dx[] = {0, 0, 1, -1};
         static uniform_int_distribution<> rand(0, 3);
+        array<int, 4> dirs = {0, 1, 2, 3};
         while(player != start){
             //// ランダムな方角から探索
-            int offset = rand(engine);
-            //cerr << player << endl;
+            shuffle(dirs.begin(), dirs.end(), engine);
             for(int i = 0; i < 4; i++){
-                int dir = (offset + i) % 4;
+                int dir = dirs[i];
                 int ny = player.y + dy[dir];
                 int nx = player.x + dx[dir];
                 if(ny < 0 || nx < 0) continue;
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
 
-                //printf("%lld ?== %lld + %lld\n", D[player.y][player.x], D[ny][nx], dist[ny][nx][dir]);
-                if(D[player.y][player.x] == (D[ny][nx] + dist[ny][nx][dir])){
+                if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
                     player = Pos(ny, nx);
                     path.push_back(int2dir(dir));
                     break;
@@ -188,7 +196,7 @@ struct Field{
     vector<Dir> get_path(Pos start, Pos goal){
         /// temporary distance
         vector<vector<ll>> D(NUM_GRID, vector<ll>(NUM_GRID, INF));
-        dijkstra(start, D, 1.0);
+        dijkstra(start, D);
         auto path = restore_path(start, goal, D);
         return path;
     }
@@ -202,10 +210,9 @@ struct Field{
         static uniform_real_distribution<> rand(0.9, 1.1);
         for(auto& dir : path){
             //printf("%d, %d, %d : %lld\n", player.y, player.x, dir2int(dir), ave_score);
-            //dist[player.y][player.x][dir2int(dir)] = ave_score;
             ll update_score = ave_score;
-            //ll update_score = (double)ave_score * rand(engine);
-            dist[player.y][player.x][dir2int(dir)] = (dist[player.y][player.x][dir2int(dir)] + update_score) / 2;
+            /////TODO:check validity
+            get_dist(player.y, player.x, dir) = (get_dist(player.y, player.x, dir) + update_score) / 2;
             player.next(dir);
         }
     }
@@ -213,24 +220,39 @@ struct Field{
 
 ////////////////////////////////////////////////////////
 
-//// useless answer
+//// naive answer
 vector<Dir> path_naive(Pos player, Pos goal){
     vector<Dir> path;
 
-    //// test
+    //// 縦横を交互に決定
+    int idx = 0;
     while(player != goal){
         Dir dir;
-        if(player.y < goal.y)
-            dir = Dir::D;
-        else if(player.y > goal.y)
-            dir = Dir::U;
-        else if(player.x < goal.x)
-            dir = Dir::R;
-        else if(player.x > goal.x)
-            dir = Dir::L;
+        if(idx % 2 == 0){
+            if(player.y < goal.y)
+                dir = Dir::D;
+            else if(player.y > goal.y)
+                dir = Dir::U;
+            else if(player.x < goal.x)
+                dir = Dir::R;
+            else if(player.x > goal.x)
+                dir = Dir::L;
+        }
+        else{
+            if(player.x < goal.x)
+                dir = Dir::R;
+            else if(player.x > goal.x)
+                dir = Dir::L;
+            else if(player.y < goal.y)
+                dir = Dir::D;
+            else if(player.y > goal.y)
+                dir = Dir::U;
+        }
 
         player.next(dir);
         path.push_back(dir);
+        ////TODO: 直線で探索すべき？
+        //idx = (idx + 1) % 2;
     }
 
     return path;
@@ -238,7 +260,9 @@ vector<Dir> path_naive(Pos player, Pos goal){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    //path = path_naive(start, goal);
+    //if(q_idx < 100)
+    //    path = path_naive(start, goal);
+    //else
     path = field.get_path(start, goal);
     return path;
 }
