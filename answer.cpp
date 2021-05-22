@@ -83,7 +83,13 @@ struct Pos{
     bool operator!=(const Pos& rhs){
         return !operator==(rhs);
     }
+    friend ostream& operator<<(ostream& os, const Pos& pos);
 };
+
+ostream& operator<<(ostream& os, const Pos& pos){
+    os << "Pos(" << pos.y << ", " << pos.x << ")";
+    return os;
+}
 
 //// for graph analysis
 struct Field{
@@ -107,6 +113,7 @@ struct Field{
     }
 
     //// 頂点sから各頂点への経路長を計算
+    //// TODO
     //// epsの確率で未探索の経路を選択するようにする。
     void dijkstra(Pos s, vector<vector<ll>>& D, double eps){
         D[s.y][s.x] = 0;
@@ -125,14 +132,16 @@ struct Field{
                 int nx = x + dx[dir];
                 if(ny < 0 || nx < 0) continue;
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
-                ll nd = d;
+                //ll nd = d;
                 //// TODO
                 //static uniform_real_distribution<> rand(0.0, 1.0);
                 //if(dir != 3 && dist[y][x][dir] != init && rand(engine) < eps)
                 //    nd += init;
                 //else
                 //    nd += dist[y][x][dir];
-                nd += dist[y][x][dir];
+                //nd += dist[y][x][dir];
+
+                ll nd = d + dist[y][x][dir];
                 if(nd < D[ny][nx]){
                     D[ny][nx] = nd;
                     que.push(T(nd, ny, nx));
@@ -148,8 +157,13 @@ struct Field{
         auto player = Pos(goal);
         const int dy[] = {1, -1, 0, 0};
         const int dx[] = {0, 0, 1, -1};
+        static uniform_int_distribution<> rand(0, 3);
         while(player != start){
-            for(int dir = 0; dir < 4; dir++){
+            //// ランダムな方角から探索
+            int offset = rand(engine);
+            //cerr << player << endl;
+            for(int i = 0; i < 4; i++){
+                int dir = (offset + i) % 4;
                 int ny = player.y + dy[dir];
                 int nx = player.x + dx[dir];
                 if(ny < 0 || nx < 0) continue;
@@ -162,7 +176,7 @@ struct Field{
                     break;
                 }
 
-                if(dir == 3)
+                if(i == 3)
                     assert(false);
             }
         }
@@ -185,9 +199,13 @@ struct Field{
         ll ave_score = score / path.size();
         //cerr << ave_score << endl;
         Pos player(start);
+        static uniform_real_distribution<> rand(0.9, 1.1);
         for(auto& dir : path){
             //printf("%d, %d, %d : %lld\n", player.y, player.x, dir2int(dir), ave_score);
-            dist[player.y][player.x][dir2int(dir)] = ave_score;
+            //dist[player.y][player.x][dir2int(dir)] = ave_score;
+            ll update_score = ave_score;
+            //ll update_score = (double)ave_score * rand(engine);
+            dist[player.y][player.x][dir2int(dir)] = (dist[player.y][player.x][dir2int(dir)] + update_score) / 2;
             player.next(dir);
         }
     }
@@ -226,7 +244,8 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 }
 
 int main(){
-    Field field(9000);
+    //// 未探索の経路から優先的に使用?
+    Field field(4000);
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
