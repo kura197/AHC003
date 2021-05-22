@@ -3,7 +3,7 @@ INPUT = answer.cpp
 OUTPUT = answer
 
 TESTER = tools/target/release/tester
-TEST_IN = tools/in/0000.txt
+TEST_IN = tools/in/0010.txt
 TEST_OUT = out.txt
 
 TEST_SHELL = ./test.sh

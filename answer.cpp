@@ -94,9 +94,9 @@ ostream& operator<<(ostream& os, const Pos& pos){
 //// for graph analysis
 struct Field{
     //// row[i][j] := (i, j) --> (i+1, j)
-    array<array<ll, NUM_GRID-1>, NUM_GRID> row;
+    array<array<ll, NUM_GRID>, NUM_GRID-1> row;
     //// col[i][j] := (i, j) --> (i, j+1)
-    array<array<ll, NUM_GRID>, NUM_GRID-1> col;
+    array<array<ll, NUM_GRID-1>, NUM_GRID> col;
 
     ll init;
     /// for random value
@@ -205,15 +205,67 @@ struct Field{
     void update_path(Pos start, Pos goal, ll score, vector<Dir> path){
         //// 平均の経路長で、経路長の推定値を更新
         ll ave_score = score / path.size();
-        //cerr << ave_score << endl;
+
+        //// 通った行・列の辺の重みを全て更新
+        //// スコアがかなり落ちた.なぜ？
+        unordered_map<int, int> cols, rows;
+
+        //// 通った辺を保存
+        using P = pair<int, int>;
+        set<P> used_row;
+        set<P> used_col;
+
         Pos player(start);
-        static uniform_real_distribution<> rand(0.9, 1.1);
         for(auto& dir : path){
-            //printf("%d, %d, %d : %lld\n", player.y, player.x, dir2int(dir), ave_score);
-            ll update_score = ave_score;
-            /////TODO:check validity
-            get_dist(player.y, player.x, dir) = (get_dist(player.y, player.x, dir) + update_score) / 2;
+            //get_dist(player.y, player.x, dir) = (get_dist(player.y, player.x, dir) + ave_score) / 2;
+            //get_dist(player.y, player.x, dir) = ave_score;
+            if(dir == Dir::U){
+                cols[player.x]++;
+                used_row.insert(P(player.y-1, player.x));
+            }
+            else if(dir == Dir::D){
+                cols[player.x]++;
+                used_row.insert(P(player.y, player.x));
+            }
+            else if(dir == Dir::L){
+                rows[player.y]++;
+                used_col.insert(P(player.y, player.x-1));
+            }
+            else if(dir == Dir::R){
+                rows[player.y]++;
+                used_col.insert(P(player.y, player.x));
+            }
             player.next(dir);
+        }
+
+        //// いらない？
+        //static uniform_int_distribution<> rand(-1050, 1050);
+        static uniform_int_distribution<> rand(0, 0);
+        const int CNT = 8;
+        for(auto& [r, cnt] : rows){
+            REP(i, NUM_GRID-1){
+                if(cnt < CNT){
+                    //// M == 1 では悪くなる？
+                    //// M == 2 では良くなる？
+                    if(used_col.find(P(r, i)) != used_col.end())
+                        col[r][i] = (7*col[r][i] + 3*(ave_score + rand(engine))) / 10;
+                }
+                else{
+                    col[r][i] = (7*col[r][i] + 3*(ave_score + rand(engine))) / 10;
+                }
+            }
+        }
+
+        for(auto& [c, cnt] : cols){
+            REP(i, NUM_GRID-1){
+                if(cnt < CNT){
+                    if(used_row.find(P(i, c)) != used_row.end())
+                        row[i][c] = (7*row[i][c] + 3*(ave_score + rand(engine))) / 10;
+                }
+                else{
+                    row[i][c] = (7*row[i][c] + 3*(ave_score + rand(engine))) / 10;
+                }
+            }
         }
     }
 };
@@ -260,10 +312,10 @@ vector<Dir> path_naive(Pos player, Pos goal){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    //if(q_idx < 100)
-    //    path = path_naive(start, goal);
-    //else
-    path = field.get_path(start, goal);
+    if(q_idx < 100)
+        path = path_naive(start, goal);
+    else
+        path = field.get_path(start, goal);
     return path;
 }
 

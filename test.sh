@@ -11,7 +11,7 @@ run_test(){
 }
 
 run_test 0
-run_test 1
-run_test 2
-run_test 3
-run_test 4
+run_test 10
+run_test 20
+run_test 30
+run_test 40
