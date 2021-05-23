@@ -243,14 +243,20 @@ struct Field{
         //// いらない？
         //static uniform_int_distribution<> rand(-1050, 1050);
         static uniform_int_distribution<> rand(0, 0);
-        const int CNT = 8;
+        const int CNT = 7;
 
         //// TODO: q_idxの値を考慮
         //// 0 <= P <= 10
         //// 初期値・最終値
-        const double P0A = 6,  P0B = 1;
-        const double P1A = 8, P1B = 4;
-        const double P2A = 6,  P2B = 1;
+        //const double P0A = 3,  P0B = 1;
+        //const double P1A = 9, P1B = 4;
+        //const double P2A = 6,  P2B = 1;
+        const double P0A = 2,  P0B = 1;
+        const double P1A = 4, P1B = 4;
+        const double P2A = 2,  P2B = 1;
+        //const double P0A = 4,  P0B = 1;
+        //const double P1A = 6, P1B = 4;
+        //const double P2A = 4,  P2B = 1;
         //// その行をあまり使わなかった場合における、実際に通った辺の更新
         //const double P0 = 3;
         const double P0 = P0A + ((double)(P0B - P0A) / 1000) * q_idx;
@@ -344,7 +350,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
         path = path_naive(start, goal);
     }
     
-    //if(q_idx < 100){
+    //if(q_idx < 300){
     //    Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
     //    path = path_naive(start, mid);
     //    auto tmp = path_naive(mid, goal);
@@ -358,7 +364,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 
 int main(){
     //// 未探索の経路から優先的に使用?
-    Field field(2000);
+    Field field(3000);
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;

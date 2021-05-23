@@ -6,7 +6,7 @@ TESTER = '/home/kura/Documents/atcoder/AHC003/tools/target/release/tester'
 TEST_DIR = '/home/kura/Documents/atcoder/AHC003/tools/in'
 ANSWER = '/home/kura/Documents/atcoder/AHC003/answer'
 
-TEST = [0, 20, 40, 60, 80]
+TEST = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
 
 def test(test_num):
     cmd = TESTER 
