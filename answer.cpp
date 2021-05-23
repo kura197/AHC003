@@ -170,7 +170,8 @@ struct Field{
         array<int, 4> dirs = {0, 1, 2, 3};
         while(player != start){
             //// ランダムな方角から探索
-            shuffle(dirs.begin(), dirs.end(), engine);
+            //// 経路長推定のためにやめるべき？
+            //shuffle(dirs.begin(), dirs.end(), engine);
             for(int i = 0; i < 4; i++){
                 int dir = dirs[i];
                 int ny = player.y + dy[dir];
@@ -202,7 +203,8 @@ struct Field{
     }
 
     //// 得られた経路長から、dist配列を更新 (推定)
-    void update_path(Pos start, Pos goal, ll score, vector<Dir> path){
+    //// TODO::前半は推定値の変化を大きくする？
+    void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir> path){
         //// 平均の経路長で、経路長の推定値を更新
         ll ave_score = score / path.size();
 
@@ -242,28 +244,54 @@ struct Field{
         //static uniform_int_distribution<> rand(-1050, 1050);
         static uniform_int_distribution<> rand(0, 0);
         const int CNT = 8;
+
+        //// TODO: q_idxの値を考慮
+        //// 0 <= P <= 10
+        //// 初期値・最終値
+        const double P0A = 6,  P0B = 1;
+        const double P1A = 8, P1B = 4;
+        const double P2A = 6,  P2B = 1;
+        //// その行をあまり使わなかった場合における、実際に通った辺の更新
+        //const double P0 = 3;
+        const double P0 = P0A + ((double)(P0B - P0A) / 1000) * q_idx;
+        //// その行をよく使った場合における、実際に通った辺の更新
+        //const double P1 = 5;
+        const double P1 = P1A + ((double)(P1B - P1A) / 1000) * q_idx;
+        //// その行をよく使った場合における、実際に通らなかった辺の更新
+        //// TODO: 離れるほど減衰
+        //const double P2 = 3;
+        const double P2 = P2A + ((double)(P2B - P2A) / 1000) * q_idx;
+
         for(auto& [r, cnt] : rows){
             REP(i, NUM_GRID-1){
+                ll update_score = ave_score + rand(engine);
                 if(cnt < CNT){
                     //// M == 1 では悪くなる？
                     //// M == 2 では良くなる？
                     if(used_col.find(P(r, i)) != used_col.end())
-                        col[r][i] = (7*col[r][i] + 3*(ave_score + rand(engine))) / 10;
+                        col[r][i] = ((10-P0)*col[r][i] + P0*update_score) / 10.0;
                 }
                 else{
-                    col[r][i] = (7*col[r][i] + 3*(ave_score + rand(engine))) / 10;
+                    if(used_col.find(P(r, i)) != used_col.end())
+                        col[r][i] = ((10-P1)*col[r][i] + P1*update_score) / 10.0;
+                    else
+                        col[r][i] = ((10-P2)*col[r][i] + P2*update_score) / 10.0;
                 }
             }
         }
 
         for(auto& [c, cnt] : cols){
             REP(i, NUM_GRID-1){
+                ll update_score = ave_score + rand(engine);
                 if(cnt < CNT){
                     if(used_row.find(P(i, c)) != used_row.end())
-                        row[i][c] = (7*row[i][c] + 3*(ave_score + rand(engine))) / 10;
+                        row[i][c] = ((10-P0)*row[i][c] + P0*update_score) / 10.0;
                 }
                 else{
-                    row[i][c] = (7*row[i][c] + 3*(ave_score + rand(engine))) / 10;
+                    if(used_row.find(P(i, c)) != used_row.end())
+                        row[i][c] = ((10-P1)*row[i][c] + P1*update_score) / 10.0;
+                    else
+                        row[i][c] = ((10-P2)*row[i][c] + P2*update_score) / 10.0;
                 }
             }
         }
@@ -312,8 +340,17 @@ vector<Dir> path_naive(Pos player, Pos goal){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    if(q_idx < 100)
+    if(q_idx < 0){
         path = path_naive(start, goal);
+    }
+    
+    //if(q_idx < 100){
+    //    Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
+    //    path = path_naive(start, mid);
+    //    auto tmp = path_naive(mid, goal);
+    //    for(auto& t : tmp)
+    //        path.push_back(t);
+    //}
     else
         path = field.get_path(start, goal);
     return path;
@@ -321,7 +358,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 
 int main(){
     //// 未探索の経路から優先的に使用?
-    Field field(4000);
+    Field field(2000);
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
@@ -333,7 +370,7 @@ int main(){
 
         ll score;
         cin >> score;
-        field.update_path(player, goal, score, path);
+        field.update_path(qi, player, goal, score, path);
     }
 
     return 0;
