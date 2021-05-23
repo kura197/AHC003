@@ -93,9 +93,9 @@ ostream& operator<<(ostream& os, const Pos& pos){
 
 //// for graph analysis
 struct Field{
-    //// row[i][j] := (i, j) --> (i+1, j)
-    array<array<ll, NUM_GRID>, NUM_GRID-1> row;
-    //// col[i][j] := (i, j) --> (i, j+1)
+    //// row[i][j] := i列目のj番目の辺 : (j, i) --> (j+1, i)
+    array<array<ll, NUM_GRID-1>, NUM_GRID> row;
+    //// col[i][j] := i行目のj番目の辺 : (i, j) --> (i, j+1)
     array<array<ll, NUM_GRID-1>, NUM_GRID> col;
 
     ll init;
@@ -108,14 +108,14 @@ struct Field{
         //engine = mt19937(seed_gen());
         engine = mt19937(1);
 
-        REP(r, NUM_GRID-1){
-            REP(c, NUM_GRID){
-                row[r][c] = init;
+        REP(i, NUM_GRID){
+            REP(j, NUM_GRID-1){
+                row[i][j] = init;
             }
         }
-        REP(r, NUM_GRID){
-            REP(c, NUM_GRID-1){
-                col[r][c] = init;
+        REP(i, NUM_GRID){
+            REP(j, NUM_GRID-1){
+                col[i][j] = init;
             }
         }
     }
@@ -123,8 +123,8 @@ struct Field{
     //// (y, x) から dir方向の辺の重みを取得
     ll& get_dist(int y, int x, Dir dir){
         switch(dir){
-            case Dir::U: return row[y-1][x];
-            case Dir::D: return row[y][x];
+            case Dir::U: return row[x][y-1];
+            case Dir::D: return row[x][y];
             case Dir::L: return col[y][x-1];
             case Dir::R: return col[y][x];
             default: assert(false);
@@ -202,9 +202,9 @@ struct Field{
         return path;
     }
 
-    //// 得られた経路長から、dist配列を更新 (推定)
+    //// 通った経路(+上下左右の経路)をscoreの平均で更新
     //// TODO::前半は推定値の変化を大きくする？
-    void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir> path){
+    void update_path_uniform(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
         //// 平均の経路長で、経路長の推定値を更新
         ll ave_score = score / path.size();
 
@@ -219,15 +219,13 @@ struct Field{
 
         Pos player(start);
         for(auto& dir : path){
-            //get_dist(player.y, player.x, dir) = (get_dist(player.y, player.x, dir) + ave_score) / 2;
-            //get_dist(player.y, player.x, dir) = ave_score;
             if(dir == Dir::U){
                 cols[player.x]++;
-                used_row.insert(P(player.y-1, player.x));
+                used_row.insert(P(player.x, player.y-1));
             }
             else if(dir == Dir::D){
                 cols[player.x]++;
-                used_row.insert(P(player.y, player.x));
+                used_row.insert(P(player.x, player.y));
             }
             else if(dir == Dir::L){
                 rows[player.y]++;
@@ -242,65 +240,57 @@ struct Field{
 
         //// いらない？
         //static uniform_int_distribution<> rand(-1050, 1050);
-        static uniform_int_distribution<> rand(0, 0);
-        const int CNT = 7;
 
-        //// TODO: q_idxの値を考慮
-        //// 0 <= P <= 10
-        //// 初期値・最終値
-        //const double P0A = 3,  P0B = 1;
-        //const double P1A = 9, P1B = 4;
-        //const double P2A = 6,  P2B = 1;
-        const double P0A = 2,  P0B = 1;
-        const double P1A = 4, P1B = 4;
-        const double P2A = 2,  P2B = 1;
-        //const double P0A = 4,  P0B = 1;
-        //const double P1A = 6, P1B = 4;
-        //const double P2A = 4,  P2B = 1;
-        //// その行をあまり使わなかった場合における、実際に通った辺の更新
-        //const double P0 = 3;
-        const double P0 = P0A + ((double)(P0B - P0A) / 1000) * q_idx;
-        //// その行をよく使った場合における、実際に通った辺の更新
-        //const double P1 = 5;
-        const double P1 = P1A + ((double)(P1B - P1A) / 1000) * q_idx;
-        //// その行をよく使った場合における、実際に通らなかった辺の更新
-        //// TODO: 離れるほど減衰
-        //const double P2 = 3;
-        const double P2 = P2A + ((double)(P2B - P2A) / 1000) * q_idx;
+        ll update_score = ave_score;
+        auto update_edges = [&update_score, &q_idx](auto& edge_weight, auto& edges, auto& used_edges){
+            const int CNT = 7;
 
-        for(auto& [r, cnt] : rows){
-            REP(i, NUM_GRID-1){
-                ll update_score = ave_score + rand(engine);
-                if(cnt < CNT){
-                    //// M == 1 では悪くなる？
-                    //// M == 2 では良くなる？
-                    if(used_col.find(P(r, i)) != used_col.end())
-                        col[r][i] = ((10-P0)*col[r][i] + P0*update_score) / 10.0;
-                }
-                else{
-                    if(used_col.find(P(r, i)) != used_col.end())
-                        col[r][i] = ((10-P1)*col[r][i] + P1*update_score) / 10.0;
-                    else
-                        col[r][i] = ((10-P2)*col[r][i] + P2*update_score) / 10.0;
+            //// 0 <= P <= 10
+            //// 初期値・最終値
+            const double P0A = 2,  P0B = 1;
+            const double P1A = 4, P1B = 4;
+            const double P2A = 2,  P2B = 1;
+            //// その行をあまり使わなかった場合における、実際に通った辺の更新
+            //const double P0 = 3;
+            const double P0 = P0A + ((double)(P0B - P0A) / 1000) * q_idx;
+            //// その行をよく使った場合における、実際に通った辺の更新
+            //const double P1 = 5;
+            const double P1 = P1A + ((double)(P1B - P1A) / 1000) * q_idx;
+            //// その行をよく使った場合における、実際に通らなかった辺の更新
+            //// TODO: 離れるほど減衰
+            //const double P2 = 3;
+            const double P2 = P2A + ((double)(P2B - P2A) / 1000) * q_idx;
+
+            for(auto& [r, cnt] : edges){
+                REP(i, NUM_GRID-1){
+                    if(cnt < CNT){
+                        //// M == 1 では悪くなる？
+                        //// M == 2 では良くなる？
+                        if(used_edges.find(P(r, i)) != used_edges.end())
+                            edge_weight[r][i] = ((10-P0)*edge_weight[r][i] + P0*update_score) / 10.0;
+                    }
+                    else{
+                        if(used_edges.find(P(r, i)) != used_edges.end())
+                            edge_weight[r][i] = ((10-P1)*edge_weight[r][i] + P1*update_score) / 10.0;
+                        else
+                            edge_weight[r][i] = ((10-P2)*edge_weight[r][i] + P2*update_score) / 10.0;
+                    }
                 }
             }
-        }
+        };
 
-        for(auto& [c, cnt] : cols){
-            REP(i, NUM_GRID-1){
-                ll update_score = ave_score + rand(engine);
-                if(cnt < CNT){
-                    if(used_row.find(P(i, c)) != used_row.end())
-                        row[i][c] = ((10-P0)*row[i][c] + P0*update_score) / 10.0;
-                }
-                else{
-                    if(used_row.find(P(i, c)) != used_row.end())
-                        row[i][c] = ((10-P1)*row[i][c] + P1*update_score) / 10.0;
-                    else
-                        row[i][c] = ((10-P2)*row[i][c] + P2*update_score) / 10.0;
-                }
-            }
-        }
+        update_edges(col, rows, used_col);
+        update_edges(row, cols, used_row);
+
+    }
+
+    //// ある行・列に対し、通った辺を中心として更新値を減衰
+    void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
+    }
+
+    //// 得られた経路長から、dist配列を更新 (推定)
+    void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
+        update_path_uniform(q_idx, start, goal, score, path);
     }
 };
 
