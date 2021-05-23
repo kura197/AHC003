@@ -6,6 +6,8 @@ TESTER = tools/target/release/tester
 TEST_IN = tools/in/0080.txt
 TEST_OUT = out.txt
 
+VIS = tools/target/release/vis
+
 TEST_SHELL = ./test.sh
 TEST_PY = ./test.py
 
@@ -17,13 +19,17 @@ test: $(OUTPUT)
 #	$(TEST_SHELL)
 	python $(TEST_PY)
 
-.PHONY: out
-out: $(OUTPUT)
-	$(TESTER) $(TEST_IN) ./$(OUTPUT) > $(TEST_OUT)
+#.PHONY: out
+$(TEST_OUT): $(OUTPUT)
+	$(TESTER) $(TEST_IN) ./$(OUTPUT) > $@
+
+.PHONY: svg
+svg: $(OUTPUT) $(TEST_OUT)
+	$(VIS) $(TEST_IN) $(TEST_OUT)
 
 $(OUTPUT): $(INPUT)
 	$(CXX) $< -o $@ $(CFLAGS)
 
 .PHONY: clean
 clean:
-	rm $(OUTPUT)
+	rm $(OUTPUT) $(TEST_OUT)

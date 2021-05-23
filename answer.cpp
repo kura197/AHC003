@@ -15,7 +15,8 @@ const ll MOD = 1e9+7;
 const ll INF = 1LL << 60;
 
 //// number of queries
-const int NUM_Q = 1000;
+///const int NUM_Q = 1000;
+const int NUM_Q = 5000;
 
 //// size of the grid
 const int NUM_GRID = 30;
@@ -252,14 +253,14 @@ struct Field{
             const double P2A = 2,  P2B = 1;
             //// その行をあまり使わなかった場合における、実際に通った辺の更新
             //const double P0 = 3;
-            const double P0 = P0A + ((double)(P0B - P0A) / 1000) * q_idx;
+            const double P0 = P0A + ((double)(P0B - P0A) / NUM_Q) * q_idx;
             //// その行をよく使った場合における、実際に通った辺の更新
             //const double P1 = 5;
-            const double P1 = P1A + ((double)(P1B - P1A) / 1000) * q_idx;
+            const double P1 = P1A + ((double)(P1B - P1A) / NUM_Q) * q_idx;
             //// その行をよく使った場合における、実際に通らなかった辺の更新
             //// TODO: 離れるほど減衰
             //const double P2 = 3;
-            const double P2 = P2A + ((double)(P2B - P2A) / 1000) * q_idx;
+            const double P2 = P2A + ((double)(P2B - P2A) / NUM_Q) * q_idx;
 
             for(auto& [r, cnt] : edges){
                 REP(i, NUM_GRID-1){
@@ -286,11 +287,81 @@ struct Field{
 
     //// ある行・列に対し、通った辺を中心として更新値を減衰
     void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
+        //// 辺の重み
+        vector<vector<double>> row_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
+        vector<vector<double>> col_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
+
+        //// 畳み込み
+        const int KER = 1;
+        Pos player(start);
+        for(auto& dir : path){
+            auto x = player.x, y = player.y;
+            if(dir == Dir::U){
+                for(int k = -KER; k <= KER; k++){
+                    if(y-1+k < 0 || NUM_GRID-1 <= y-1+k) continue;
+                    row_val[x][y-1+k] += 1;
+                }
+            }
+            else if(dir == Dir::D){
+                for(int k = -KER; k <= KER; k++){
+                    if(y+k < 0 || NUM_GRID-1 <= y+k) continue;
+                    row_val[x][y+k] += 1;
+                }
+            }
+            else if(dir == Dir::L){
+                for(int k = -KER; k <= KER; k++){
+                    if(x-1+k < 0 || NUM_GRID-1 <= x-1+k) continue;
+                    col_val[y][x-1+k] += 1;
+                }
+            }
+            else if(dir == Dir::R){
+                for(int k = -KER; k <= KER; k++){
+                    if(x+k < 0 || NUM_GRID-1 <= x+k) continue;
+                    col_val[y][x+k] += 1;
+                }
+            }
+            player.next(dir);
+        }
+
+        vector<double> row_max(NUM_GRID, 0), col_max(NUM_GRID, 0);
+        auto calc_ratio = [](auto& edge_val, auto& edge_max){
+            REP(i, NUM_GRID){
+                ll sum = 0;
+                REP(j, NUM_GRID-1)
+                    sum += edge_val[i][j];
+                if(sum == 0) continue;
+                REP(j, NUM_GRID-1){
+                    edge_val[i][j] /= sum;
+                    chmax(edge_max[i], edge_val[i][j]);
+                }
+            }
+        };
+        calc_ratio(row_val, row_max);
+        calc_ratio(col_val, col_max);
+
+        const double update_score = (double)score / path.size();
+        auto edge_update = [&update_score, &q_idx](auto& edge_weight, auto& edge_val, auto& edge_max){
+            const double PA = 0.3,  PB = 0.2;
+            const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
+            REP(i, NUM_GRID){
+                if(edge_max[i] < 0.0001) continue;
+                REP(j, NUM_GRID-1){
+                    ////TODO
+                    const double P = Pmax * (edge_val[i][j] / edge_max[i]);
+                    //cerr << P << endl;
+                    edge_weight[i][j] = ((1-P)*edge_weight[i][j] + P*update_score);
+                }
+            }
+        };
+        edge_update(row, row_val, row_max);
+        edge_update(col, col_val, col_max);
+
     }
 
     //// 得られた経路長から、dist配列を更新 (推定)
     void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        update_path_uniform(q_idx, start, goal, score, path);
+        //update_path_uniform(q_idx, start, goal, score, path);
+        update_path_decay(q_idx, start, goal, score, path);
     }
 };
 
@@ -339,14 +410,13 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     if(q_idx < 0){
         path = path_naive(start, goal);
     }
-    
-    //if(q_idx < 300){
-    //    Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
-    //    path = path_naive(start, mid);
-    //    auto tmp = path_naive(mid, goal);
-    //    for(auto& t : tmp)
-    //        path.push_back(t);
-    //}
+    else if(q_idx < 0){
+        Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
+        path = path_naive(start, mid);
+        auto tmp = path_naive(mid, goal);
+        for(auto& t : tmp)
+            path.push_back(t);
+    }
     else
         path = field.get_path(start, goal);
     return path;
@@ -355,6 +425,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 int main(){
     //// 未探索の経路から優先的に使用?
     Field field(3000);
+    //Field field(100);
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
