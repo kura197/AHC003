@@ -296,7 +296,7 @@ struct Field{
         ll predicted_score = 0;
 
         //// 畳み込み
-        const int KER = 1;
+        const int KER = 7;
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
@@ -354,7 +354,7 @@ struct Field{
         auto edge_update = [&q_idx, &score, &path, &predicted_score](auto& edge_weight, auto& edge_val, auto& edge_max){
             ////TODO: 問題毎にこの辺を可変にしたい
             //const double PA = 0.8,  PB = 0.2;
-            const double PA = 0.8,  PB = 0.4;
+            const double PA = 0.8,  PB = 0.7;
             //const double PA = 0.3,  PB = 0.2;
             //const double PA = 0.6,  PB = 0.1;
             //const double PA = 0.1,  PB = 0.01;
@@ -424,7 +424,7 @@ vector<Dir> path_naive(Pos player, Pos goal){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    if(q_idx < 0){
+    if(q_idx < 100){
         path = path_naive(start, goal);
     }
     else if(q_idx < 0){
@@ -442,8 +442,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 int main(){
     //// TODO
     //// 未探索の経路から優先的に使用?
-    //Field field(5000);
-    Field field(3000);
+    Field field(4000);
     //Field field(100);
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
