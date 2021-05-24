@@ -353,11 +353,9 @@ struct Field{
 
         auto edge_update = [&q_idx, &score, &path, &predicted_score](auto& edge_weight, auto& edge_val, auto& edge_max){
             ////TODO: 問題毎にこの辺を可変にしたい
-            //const double PA = 0.8,  PB = 0.2;
-            const double PA = 0.8,  PB = 0.7;
-            //const double PA = 0.3,  PB = 0.2;
-            //const double PA = 0.6,  PB = 0.1;
-            //const double PA = 0.1,  PB = 0.01;
+            const double PA = 0.8,  PB = 0.6;
+            ///const double PA = 1.0,  PB = 1.0;
+            ///const double PA = 0.6,  PB = 0.4;
             const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
             REP(i, NUM_GRID){
                 if(edge_max[i] < 0.0001) continue;
@@ -424,7 +422,14 @@ vector<Dir> path_naive(Pos player, Pos goal){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    if(q_idx < 100){
+    //const double PA = 1.0,  PB = -5.0;
+    //const double P = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
+    ////cerr << q_idx << " : " << P << endl;
+    //static mt19937 engine = mt19937(1);
+    //static uniform_real_distribution<> rand(0, 1);
+
+    //if(rand(engine) < P){
+    if(q_idx < 75){
         path = path_naive(start, goal);
     }
     else if(q_idx < 0){
