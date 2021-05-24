@@ -15,8 +15,8 @@ const ll MOD = 1e9+7;
 const ll INF = 1LL << 60;
 
 //// number of queries
-///const int NUM_Q = 1000;
-const int NUM_Q = 5000;
+const int NUM_Q = 1000;
+///const int NUM_Q = 5000;
 
 //// size of the grid
 const int NUM_GRID = 30;
@@ -291,30 +291,37 @@ struct Field{
         vector<vector<double>> row_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
         vector<vector<double>> col_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
 
+        //// 現在のパス長を基にしたスコアの推定値
+        ll predicted_score = 0;
+
         //// 畳み込み
-        const int KER = 1;
+        const int KER = 2;
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
             if(dir == Dir::U){
+                predicted_score += row[x][y-1];
                 for(int k = -KER; k <= KER; k++){
                     if(y-1+k < 0 || NUM_GRID-1 <= y-1+k) continue;
                     row_val[x][y-1+k] += 1;
                 }
             }
             else if(dir == Dir::D){
+                predicted_score += row[x][y];
                 for(int k = -KER; k <= KER; k++){
                     if(y+k < 0 || NUM_GRID-1 <= y+k) continue;
                     row_val[x][y+k] += 1;
                 }
             }
             else if(dir == Dir::L){
+                predicted_score += col[y][x-1];
                 for(int k = -KER; k <= KER; k++){
                     if(x-1+k < 0 || NUM_GRID-1 <= x-1+k) continue;
                     col_val[y][x-1+k] += 1;
                 }
             }
             else if(dir == Dir::R){
+                predicted_score += col[y][x];
                 for(int k = -KER; k <= KER; k++){
                     if(x+k < 0 || NUM_GRID-1 <= x+k) continue;
                     col_val[y][x+k] += 1;
@@ -322,6 +329,10 @@ struct Field{
             }
             player.next(dir);
         }
+
+        //cerr << score << " " << predicted_score << endl;
+        //if(q_idx % 100 == 0)
+        //    cerr << score - predicted_score  << endl;
 
         vector<double> row_max(NUM_GRID, 0), col_max(NUM_GRID, 0);
         auto calc_ratio = [](auto& edge_val, auto& edge_max){
@@ -339,14 +350,17 @@ struct Field{
         calc_ratio(row_val, row_max);
         calc_ratio(col_val, col_max);
 
-        const double update_score = (double)score / path.size();
-        auto edge_update = [&update_score, &q_idx](auto& edge_weight, auto& edge_val, auto& edge_max){
-            const double PA = 0.3,  PB = 0.2;
+        auto edge_update = [&q_idx, &score, &path, &predicted_score](auto& edge_weight, auto& edge_val, auto& edge_max){
+            //const double PA = 0.8,  PB = 0.2;
+            //const double PA = 0.3,  PB = 0.2;
+            const double PA = 0.6,  PB = 0.1;
+            //const double PA = 0.1,  PB = 0.01;
             const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
             REP(i, NUM_GRID){
                 if(edge_max[i] < 0.0001) continue;
                 REP(j, NUM_GRID-1){
-                    ////TODO
+                    //const double update_score = (double)score / path.size();
+                    const double update_score = (double)score * ((double)edge_weight[i][j] / predicted_score);
                     const double P = Pmax * (edge_val[i][j] / edge_max[i]);
                     //cerr << P << endl;
                     edge_weight[i][j] = ((1-P)*edge_weight[i][j] + P*update_score);
@@ -423,7 +437,9 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 }
 
 int main(){
+    //// TODO
     //// 未探索の経路から優先的に使用?
+    //Field field(5000);
     Field field(3000);
     //Field field(100);
     for(int qi = 0; qi < NUM_Q; qi++){

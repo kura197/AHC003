@@ -3,7 +3,7 @@ INPUT = answer.cpp
 OUTPUT = answer
 
 TESTER = tools/target/release/tester
-TEST_IN = tools/in/0080.txt
+TEST_IN = tools/in/0028.txt
 TEST_OUT = out.txt
 
 VIS = tools/target/release/vis
