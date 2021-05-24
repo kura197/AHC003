@@ -17,6 +17,7 @@ const ll INF = 1LL << 60;
 //// number of queries
 const int NUM_Q = 1000;
 ///const int NUM_Q = 5000;
+///const int NUM_Q = 10000;
 
 //// size of the grid
 const int NUM_GRID = 30;
@@ -295,7 +296,7 @@ struct Field{
         ll predicted_score = 0;
 
         //// 畳み込み
-        const int KER = 2;
+        const int KER = 1;
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
@@ -303,28 +304,28 @@ struct Field{
                 predicted_score += row[x][y-1];
                 for(int k = -KER; k <= KER; k++){
                     if(y-1+k < 0 || NUM_GRID-1 <= y-1+k) continue;
-                    row_val[x][y-1+k] += 1;
+                    row_val[x][y-1+k] += 1 + (KER - abs(k));
                 }
             }
             else if(dir == Dir::D){
                 predicted_score += row[x][y];
                 for(int k = -KER; k <= KER; k++){
                     if(y+k < 0 || NUM_GRID-1 <= y+k) continue;
-                    row_val[x][y+k] += 1;
+                    row_val[x][y+k] += 1 + (KER - abs(k));
                 }
             }
             else if(dir == Dir::L){
                 predicted_score += col[y][x-1];
                 for(int k = -KER; k <= KER; k++){
                     if(x-1+k < 0 || NUM_GRID-1 <= x-1+k) continue;
-                    col_val[y][x-1+k] += 1;
+                    col_val[y][x-1+k] += 1 + (KER - abs(k));
                 }
             }
             else if(dir == Dir::R){
                 predicted_score += col[y][x];
                 for(int k = -KER; k <= KER; k++){
                     if(x+k < 0 || NUM_GRID-1 <= x+k) continue;
-                    col_val[y][x+k] += 1;
+                    col_val[y][x+k] += 1 + (KER - abs(k));
                 }
             }
             player.next(dir);
@@ -332,7 +333,7 @@ struct Field{
 
         //cerr << score << " " << predicted_score << endl;
         //if(q_idx % 100 == 0)
-        //    cerr << score - predicted_score  << endl;
+        //    cerr << abs(score - predicted_score) << endl;
 
         vector<double> row_max(NUM_GRID, 0), col_max(NUM_GRID, 0);
         auto calc_ratio = [](auto& edge_val, auto& edge_max){
@@ -351,9 +352,11 @@ struct Field{
         calc_ratio(col_val, col_max);
 
         auto edge_update = [&q_idx, &score, &path, &predicted_score](auto& edge_weight, auto& edge_val, auto& edge_max){
+            ////TODO: 問題毎にこの辺を可変にしたい
             //const double PA = 0.8,  PB = 0.2;
+            const double PA = 0.8,  PB = 0.4;
             //const double PA = 0.3,  PB = 0.2;
-            const double PA = 0.6,  PB = 0.1;
+            //const double PA = 0.6,  PB = 0.1;
             //const double PA = 0.1,  PB = 0.01;
             const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
             REP(i, NUM_GRID){

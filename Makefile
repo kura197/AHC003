@@ -3,7 +3,12 @@ INPUT = answer.cpp
 OUTPUT = answer
 
 TESTER = tools/target/release/tester
-TEST_IN = tools/in/0028.txt
+TEST_IN = tools/in/0025.txt
+
+### for test (Q == 10000)
+#TESTER = tools/target10000/release/tester
+#TEST_IN = tools/in10000/0025.txt
+
 TEST_OUT = out.txt
 
 VIS = tools/target/release/vis
@@ -26,6 +31,7 @@ $(TEST_OUT): $(OUTPUT)
 .PHONY: svg
 svg: $(OUTPUT) $(TEST_OUT)
 	$(VIS) $(TEST_IN) $(TEST_OUT)
+	eog out.svg
 
 $(OUTPUT): $(INPUT)
 	$(CXX) $< -o $@ $(CFLAGS)
