@@ -105,19 +105,25 @@ struct Field{
     mt19937 engine;
 
     Field(ll _init) : init(_init){
-        ////TODO:
         //random_device seed_gen;
         //engine = mt19937(seed_gen());
         engine = mt19937(1);
+        initialize_field(init);
+    }
 
+    void initialize_field(ll _init){
+        init = _init;
+        //static uniform_real_distribution<> rand(0.9, 1.1);
         REP(i, NUM_GRID){
             REP(j, NUM_GRID-1){
                 row[i][j] = init;
+                //row[i][j] = init * rand(engine);
             }
         }
         REP(i, NUM_GRID){
             REP(j, NUM_GRID-1){
                 col[i][j] = init;
+                //col[i][j] = init * rand(engine);
             }
         }
     }
@@ -296,7 +302,16 @@ struct Field{
         ll predicted_score = 0;
 
         //// 畳み込み
-        const int KER = 7;
+        ////TODO
+        //const double KPA = 23,  KPB = 1;
+        //const double KER = KPA + ((double)(KPB - KPA)/NUM_Q) * q_idx;
+        const double KPA = 23, KPB = 10, KPC = 1;
+        const int BD = 700;
+        const double KER = (q_idx < BD) ? KPA + ((double)(KPB - KPA)/BD) * q_idx :
+                                          KPB + ((double)(KPC - KPB)/(NUM_Q - BD)) * (q_idx - BD); 
+        //cerr << q_idx << " : " << KER << endl;
+        //const int KER = 7;
+        //const int KER = 10;
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
@@ -331,10 +346,6 @@ struct Field{
             player.next(dir);
         }
 
-        //cerr << score << " " << predicted_score << endl;
-        //if(q_idx % 100 == 0)
-        //    cerr << abs(score - predicted_score) << endl;
-
         vector<double> row_max(NUM_GRID, 0), col_max(NUM_GRID, 0);
         auto calc_ratio = [](auto& edge_val, auto& edge_max){
             REP(i, NUM_GRID){
@@ -351,20 +362,37 @@ struct Field{
         calc_ratio(row_val, row_max);
         calc_ratio(col_val, col_max);
 
-        auto edge_update = [&q_idx, &score, &path, &predicted_score](auto& edge_weight, auto& edge_val, auto& edge_max){
+        //// 10^3 ~ 10^5
+        ll loss_score = abs(score - predicted_score);
+        //cerr << loss_score << endl;
+        //cerr << score << " " << predicted_score << endl;
+        //if(q_idx % 100 == 0)
+        //    cerr << abs(score - predicted_score) << endl;
+
+        auto edge_update = [&q_idx, &score, &path, &predicted_score, &loss_score](auto& edge_weight, auto& edge_val, auto& edge_max){
             ////TODO: 問題毎にこの辺を可変にしたい
-            const double PA = 0.8,  PB = 0.6;
             ///const double PA = 1.0,  PB = 1.0;
             ///const double PA = 0.6,  PB = 0.4;
-            const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
+            //const double PA = 0.8,  PB = 0.6;
+            //const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
+            //
+            const double PA = 0.0,  PB = 0.8;
+            const ll LOSS_MAX = 10000;
+            const ll loss_score_clip = min(loss_score, LOSS_MAX);
+            const double Pmax = PA + ((double)(PB - PA)/LOSS_MAX) * loss_score_clip;
+            //cerr << loss_score << " : " << Pmax << endl;
             REP(i, NUM_GRID){
                 if(edge_max[i] < 0.0001) continue;
                 REP(j, NUM_GRID-1){
                     //const double update_score = (double)score / path.size();
                     const double update_score = (double)score * ((double)edge_weight[i][j] / predicted_score);
                     const double P = Pmax * (edge_val[i][j] / edge_max[i]);
-                    //cerr << P << endl;
+
+                    ///何故か重みが0である辺が出現する --> 経路探索不可
+                    ///const double update_score = (double)score * ((double)edge_weight[i][j] / predicted_score) * (edge_val[i][j] / edge_max[i]);
+                    ///const double P = Pmax;
                     edge_weight[i][j] = ((1-P)*edge_weight[i][j] + P*update_score);
+                    //cerr << edge_weight[i][j] << endl;
                 }
             }
         };
@@ -375,7 +403,9 @@ struct Field{
 
     //// 得られた経路長から、dist配列を更新 (推定)
     void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        //update_path_uniform(q_idx, start, goal, score, path);
+        //if(q_idx % 4 == 0)
+        //    update_path_uniform(q_idx, start, goal, score, path);
+        //else
         update_path_decay(q_idx, start, goal, score, path);
     }
 };
@@ -383,7 +413,7 @@ struct Field{
 ////////////////////////////////////////////////////////
 
 //// naive answer
-vector<Dir> path_naive(Pos player, Pos goal){
+vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
     vector<Dir> path;
 
     //// 縦横を交互に決定
@@ -414,7 +444,7 @@ vector<Dir> path_naive(Pos player, Pos goal){
         player.next(dir);
         path.push_back(dir);
         ////TODO: 直線で探索すべき？
-        //idx = (idx + 1) % 2;
+        idx = (zig) ? (idx + 1) % 2 : idx;
     }
 
     return path;
@@ -429,10 +459,14 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     //static uniform_real_distribution<> rand(0, 1);
 
     //if(rand(engine) < P){
+    //if(q_idx == 0){
+    //    path = path_naive(start, goal, true);
+    //}
+    //if(q_idx < 75 && q_idx % 2 == 0){
     if(q_idx < 75){
-        path = path_naive(start, goal);
+        path = path_naive(start, goal, false);
     }
-    else if(q_idx < 0){
+    else if(q_idx < 75 && q_idx % 2 == 1){
         Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
         path = path_naive(start, mid);
         auto tmp = path_naive(mid, goal);
@@ -452,6 +486,7 @@ int main(){
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
+        //cerr << si << " " << sj << " " << ti << " " << tj << endl;
         Pos player(si, sj), goal(ti, tj);
 
         vector<Dir> path = answer(qi, player, goal, field);
@@ -460,6 +495,13 @@ int main(){
 
         ll score;
         cin >> score;
+        //cerr << score << endl;
+        if(qi == 0){
+            ////TODO
+            //ll ave = score / path.size();
+            //cerr << ave * (1.0 / 0.9) << endl;
+            //field.initialize_field(ave * (1.0 / 0.9));
+        }
         field.update_path(qi, player, goal, score, path);
     }
 
