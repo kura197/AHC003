@@ -29,10 +29,10 @@ struct Pos;
 struct Field;
 Dir int2dir(int n);
 int dir2int(Dir dir);
-string path2string(vector<Dir>& path);
+string path2string(const vector<Dir>& path);
 
 //// convert path to string(answer).
-string path2string(vector<Dir>& path){
+string path2string(const vector<Dir>& path){
     string ret;
     const char dir_strs[] = {'U', 'D', 'L', 'R'};
     for(auto& dir : path){
@@ -64,6 +64,17 @@ int dir2int(Dir dir){
     }
 }
 
+//// reverse direction
+Dir rev_dir(Dir dir){
+    switch(dir){
+        case Dir::U: return Dir::D;
+        case Dir::D: return Dir::U;
+        case Dir::L: return Dir::R;
+        case Dir::R: return Dir::L;
+        default: assert(false);
+    }
+}
+
 //// position for palyer and goal
 struct Pos{
     int y, x;
@@ -79,6 +90,10 @@ struct Pos{
         }
     }
 
+    bool compare(const Pos& rhs){
+        return (100*y + x) < (100*rhs.y + rhs.x);
+    }
+
     bool operator==(const Pos& rhs){
         return (y == rhs.y) && (x == rhs.x);
     }
@@ -86,6 +101,17 @@ struct Pos{
         return !operator==(rhs);
     }
     friend ostream& operator<<(ostream& os, const Pos& pos);
+};
+
+struct PosCompare{
+    bool operator()(const Pos& lhs, const Pos& rhs) const{
+        return (100*lhs.y + lhs.x) < (100*rhs.y + rhs.x);
+    }
+
+    bool operator()(const pair<Pos, Pos>& lhs, const pair<Pos, Pos>& rhs) const{
+        return 1000000*(100*lhs.first.y + lhs.first.x) + (100*lhs.second.y + lhs.second.x)
+            < 1000000*(100*rhs.first.y + rhs.first.x) + (100*rhs.second.y + rhs.second.x);
+    }
 };
 
 ostream& operator<<(ostream& os, const Pos& pos){
@@ -99,6 +125,14 @@ struct Field{
     array<array<ll, NUM_GRID-1>, NUM_GRID> row;
     //// col[i][j] := i行目のj番目の辺 : (i, j) --> (i, j+1)
     array<array<ll, NUM_GRID-1>, NUM_GRID> col;
+
+    //// 各epochで得られるスコアを基にした辺
+    //// ex_edge[Pos(y, x)] --> {cost, Pos(ny, nx)}
+    map<Pos, vector<pair<ll, Pos>>, PosCompare> ex_edge;
+    //// ex_path[(y1, x1), (y2, x2)] --> {U, D, R, R, D, ...}
+    map<pair<Pos, Pos>, vector<Dir>, PosCompare> ex_path;
+    //// ex_edge_cost[(y1, x1), (y2, x2)] --> cost
+    map<pair<Pos, Pos>, ll, PosCompare> ex_edge_cost;
 
     ll init;
     /// for random value
@@ -164,6 +198,20 @@ struct Field{
                     que.push(T(nd, ny, nx));
                 }
             }
+
+            //// ワープする場合
+            //// TODO : check
+            for(auto& [cost, npos] : ex_edge[Pos(y, x)]){
+                int ny = npos.y;
+                int nx = npos.x;
+                if(ny < 0 || nx < 0) continue;
+                if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
+                ll nd = d + cost;
+                if(nd < D[ny][nx]){
+                    D[ny][nx] = nd;
+                    que.push(T(nd, ny, nx));
+                }
+            }
         }
     }
 
@@ -180,6 +228,7 @@ struct Field{
             //// ランダムな方角から探索
             //// 経路長推定のためにやめるべき？
             //shuffle(dirs.begin(), dirs.end(), engine);
+            bool update = false;
             for(int i = 0; i < 4; i++){
                 int dir = dirs[i];
                 int ny = player.y + dy[dir];
@@ -190,12 +239,31 @@ struct Field{
                 if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
                     player = Pos(ny, nx);
                     path.push_back(int2dir(dir));
+                    update = true;
                     break;
                 }
-
-                if(i == 3)
-                    assert(false);
             }
+
+            //// ワープした場合
+            if(!update){
+                for(auto& [cost, npos] : ex_edge[player]){
+                    int ny = npos.y;
+                    int nx = npos.x;
+                    if(ny < 0 || nx < 0) continue;
+                    if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
+                    if(D[player.y][player.x] == (D[ny][nx] + cost)){
+                        // 反転が必要
+                        for(auto& dir : ex_path[mp(player, npos)])
+                            path.push_back(rev_dir(dir));
+                        player = npos;
+                        update = true;
+                        break;
+                    }
+                }
+            }
+
+            if(!update)
+                assert(false);
         }
 
         reverse(path.begin(), path.end());
@@ -210,6 +278,7 @@ struct Field{
         return path;
     }
 
+    /*
     //// 通った経路(+上下左右の経路)をscoreの平均で更新
     //// TODO::前半は推定値の変化を大きくする？
     void update_path_uniform(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
@@ -291,6 +360,7 @@ struct Field{
         update_edges(row, cols, used_row);
 
     }
+    */
 
     //// ある行・列に対し、通った辺を中心として更新値を減衰
     void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
@@ -315,6 +385,7 @@ struct Field{
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
+            //cerr << y << " " << x << endl;
             if(dir == Dir::U){
                 predicted_score += row[x][y-1];
                 for(int k = -KER; k <= KER; k++){
@@ -403,6 +474,20 @@ struct Field{
 
     //// 得られた経路長から、dist配列を更新 (推定)
     void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
+        /// TODO: 同じ頂点を2度通ってしまう可能性がある
+        ex_edge_cost[mp(start, goal)] = ex_edge_cost[mp(start, goal)] = score;
+        ex_edge[start].push_back(mp(score, goal));
+        ex_edge[goal].push_back(mp(score, start));
+        ex_path[mp(start, goal)] = path;
+        //// 反転 & 逆順
+        {
+            ex_path[mp(goal, start)] = vector<Dir>();
+            auto tmp = path;
+            reverse(tmp.begin(), tmp.end());
+            for(auto& dir : tmp)
+                ex_path[mp(goal, start)].push_back(rev_dir(dir));
+        }
+
         //if(q_idx % 4 == 0)
         //    update_path_uniform(q_idx, start, goal, score, path);
         //else
@@ -450,6 +535,31 @@ vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
     return path;
 }
 
+//// 不要な頂点移動を除去
+vector<Dir> check_path(Pos start, Pos goal, const vector<Dir>& path){
+    vector<Dir> valid_path;
+    auto player = Pos(start);
+    set<Pos, PosCompare> pos_set;
+    pos_set.insert(start);
+    for(auto& dir : path){
+        player.next(dir);
+        valid_path.push_back(dir);
+        ////既に通った頂点の場合、そこまで戻る。
+        if(pos_set.find(player) != pos_set.end()){
+            auto pos = Pos(player);
+            pos.next(rev_dir(valid_path.back()));
+            valid_path.pop_back();
+            while(pos != player){
+                pos_set.erase(pos);
+                pos.next(rev_dir(valid_path.back()));
+                valid_path.pop_back();
+            }
+        }
+        pos_set.insert(player);
+    }
+    return valid_path;
+}
+
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
     //const double PA = 1.0,  PB = -5.0;
@@ -475,7 +585,8 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     }
     else
         path = field.get_path(start, goal);
-    return path;
+    //return path;
+    return check_path(start, goal, path);
 }
 
 int main(){

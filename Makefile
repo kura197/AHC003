@@ -3,7 +3,7 @@ INPUT = answer.cpp
 OUTPUT = answer
 
 TESTER = tools/target/release/tester
-TEST_IN = tools/in/0025.txt
+TEST_IN = tools/in/0095.txt
 VIS = tools/target/release/vis
 
 ### for test (Q == 10000)
