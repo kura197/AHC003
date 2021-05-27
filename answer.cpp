@@ -82,12 +82,13 @@ struct Pos{
     Pos() : y(0), x(0) {};
     Pos(int _y, int _x) : y(_y), x(_x) {};
 
-    void next(Dir dir){
+    void next(const Dir dir){
         switch(dir){
             case Dir::U: y--; break;
             case Dir::D: y++; break;
             case Dir::L: x--; break;
             case Dir::R: x++; break;
+            default: assert(false);
         }
     }
 
@@ -470,7 +471,8 @@ struct Field{
             //const ll loss_score_clip = min(abs(loss_score), LOSS_MAX);
             //const double Pmax = PA + ((double)(PB - PA)/LOSS_MAX) * loss_score_clip;
             
-            const double learning_rate = 0.03 * cos((M_PI / 2)/NUM_Q * q_idx);
+            //const double learning_rate = 0.03 * cos((M_PI / 2)/NUM_Q * q_idx);
+            const double learning_rate = 0.02 * cos((M_PI / 2)/NUM_Q * q_idx);
             //const double learning_rate = (q_idx < 500) ? 0.03 : (q_idx < 800) ? 0.006 : 0.002;
             const double lambda = 0.00;
             REP(i, NUM_GRID){
@@ -671,10 +673,11 @@ int main(){
         field.update_path(qi, player, goal, score, path);
 
         ////TODO: パラメータ調整
-        if(qi > 75){
+        if(qi >= 75 && qi % 5 == 0){
             static mt19937 engine = mt19937(1);
             uniform_int_distribution<> rand(0, qi-1);
-            for(int i = 0; i < 5; i++){
+            //uniform_real_distribution<> scale((1.0/1.1), (1.0/0.9));
+            for(int i = 0; i < qi/5; i++){
                 int tqi = rand(engine);
                 field.update_path(qi, mem_player[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
             }
