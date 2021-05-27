@@ -3,7 +3,7 @@ INPUT = answer.cpp
 OUTPUT = answer
 
 TESTER = tools/target/release/tester
-TEST_IN = tools/in/0095.txt
+TEST_IN = tools/in/0075.txt
 VIS = tools/target/release/vis
 
 ### for test (Q == 10000)
@@ -25,7 +25,7 @@ test: $(OUTPUT)
 #	$(TEST_SHELL)
 	python $(TEST_PY)
 
-#.PHONY: out
+.PHONY: $(TEST_OUT)
 $(TEST_OUT): $(OUTPUT)
 	$(TESTER) $(TEST_IN) ./$(OUTPUT) > $@
 
