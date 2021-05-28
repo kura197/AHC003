@@ -19,7 +19,8 @@ TEST_PY = ./test.py
 
 CXX = g++-7
 CFLAGS = --std=c++17 -Wall -O3
-#CFLAGS = --std=c++17 -pg -fsanitize=address -Wall
+#CFLAGS = --std=c++17 -g -fsanitize=address -Wall
+#CFLAGS = --std=c++17 -g -fsanitize=address -Wall -p
 
 .PHONY: test
 test: $(OUTPUT)
