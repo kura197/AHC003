@@ -150,12 +150,14 @@ struct Field{
     void initialize_field(ll _init){
         init = _init;
         ////TODO
-        static uniform_real_distribution<> rand(0.95, 1.05);
+        //static uniform_real_distribution<> rand(0.95, 1.05);
+        static uniform_real_distribution<> rand(-1.0,1.0);
         REP(i, NUM_GRID){
             REP(j, NUM_GRID-1){
                 //row[i][j] = init;
                 //row[i][j] = init * rand(engine);
-                row[i][j] = 1000 * rand(engine);
+                //row[i][j] = 1000 * rand(engine);
+                row[i][j] = 100 * rand(engine);
                 //row[i][j] = 1000;
             }
         }
@@ -163,7 +165,8 @@ struct Field{
             REP(j, NUM_GRID-1){
                 //col[i][j] = init;
                 //col[i][j] = init * rand(engine);
-                col[i][j] = 1000 * rand(engine);
+                //col[i][j] = 1000 * rand(engine);
+                col[i][j] = 100 * rand(engine);
                 //col[i][j] = 1000;
             }
         }
@@ -291,138 +294,61 @@ struct Field{
         return path;
     }
 
-    /*
-    //// 通った経路(+上下左右の経路)をscoreの平均で更新
-    //// TODO::前半は推定値の変化を大きくする？
-    void update_path_uniform(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        //// 平均の経路長で、経路長の推定値を更新
-        ll ave_score = score / path.size();
-
-        //// 通った行・列の辺の重みを全て更新
-        //// スコアがかなり落ちた.なぜ？
-        unordered_map<int, int> cols, rows;
-
-        //// 通った辺を保存
-        using P = pair<int, int>;
-        set<P> used_row;
-        set<P> used_col;
-
+    ll calc_loss(Pos start, ll score, vector<Dir>& path){
+        //// 現在のパス長を基にしたスコアの推定値
+        ll predicted_score = 0;
         Pos player(start);
         for(auto& dir : path){
-            if(dir == Dir::U){
-                cols[player.x]++;
-                used_row.insert(P(player.x, player.y-1));
-            }
-            else if(dir == Dir::D){
-                cols[player.x]++;
-                used_row.insert(P(player.x, player.y));
-            }
-            else if(dir == Dir::L){
-                rows[player.y]++;
-                used_col.insert(P(player.y, player.x-1));
-            }
-            else if(dir == Dir::R){
-                rows[player.y]++;
-                used_col.insert(P(player.y, player.x));
-            }
+            auto x = player.x, y = player.y;
+            if(dir == Dir::U)
+                predicted_score += init + row[x][y-1];
+            else if(dir == Dir::D)
+                predicted_score += init + row[x][y];
+            else if(dir == Dir::L)
+                predicted_score += init + col[y][x-1];
+            else if(dir == Dir::R)
+                predicted_score += init + col[y][x];
             player.next(dir);
         }
-
-        //// いらない？
-        //static uniform_int_distribution<> rand(-1050, 1050);
-
-        ll update_score = ave_score;
-        auto update_edges = [&update_score, &q_idx](auto& edge_weight, auto& edges, auto& used_edges){
-            const int CNT = 7;
-
-            //// 0 <= P <= 10
-            //// 初期値・最終値
-            const double P0A = 2,  P0B = 1;
-            const double P1A = 4, P1B = 4;
-            const double P2A = 2,  P2B = 1;
-            //// その行をあまり使わなかった場合における、実際に通った辺の更新
-            //const double P0 = 3;
-            const double P0 = P0A + ((double)(P0B - P0A) / NUM_Q) * q_idx;
-            //// その行をよく使った場合における、実際に通った辺の更新
-            //const double P1 = 5;
-            const double P1 = P1A + ((double)(P1B - P1A) / NUM_Q) * q_idx;
-            //// その行をよく使った場合における、実際に通らなかった辺の更新
-            //// TODO: 離れるほど減衰
-            //const double P2 = 3;
-            const double P2 = P2A + ((double)(P2B - P2A) / NUM_Q) * q_idx;
-
-            for(auto& [r, cnt] : edges){
-                REP(i, NUM_GRID-1){
-                    if(cnt < CNT){
-                        //// M == 1 では悪くなる？
-                        //// M == 2 では良くなる？
-                        if(used_edges.find(P(r, i)) != used_edges.end())
-                            edge_weight[r][i] = ((10-P0)*edge_weight[r][i] + P0*update_score) / 10.0;
-                    }
-                    else{
-                        if(used_edges.find(P(r, i)) != used_edges.end())
-                            edge_weight[r][i] = ((10-P1)*edge_weight[r][i] + P1*update_score) / 10.0;
-                        else
-                            edge_weight[r][i] = ((10-P2)*edge_weight[r][i] + P2*update_score) / 10.0;
-                    }
-                }
-            }
-        };
-
-        update_edges(col, rows, used_col);
-        update_edges(row, cols, used_row);
-
+        ll loss_score = score - predicted_score;
+        return loss_score;
     }
-    */
 
-    //// ある行・列に対し、通った辺を中心として更新値を減衰
-    void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        //// 辺の重み
+    //// lossを近傍の頂点へ分配する
+    void loss_distribution(int q_idx, Pos start, vector<Dir>& path, ll loss_score, auto& row_loss, auto& col_loss){
+        //// 辺の系数値
         vector<vector<double>> row_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
         vector<vector<double>> col_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
 
-        //// 現在のパス長を基にしたスコアの推定値
-        ll predicted_score = 0;
-
         //// 畳み込み
-        ////TODO
-        //const double KPA = 23,  KPB = 1;
-        //const double KER = KPA + ((double)(KPB - KPA)/NUM_Q) * q_idx;
         const double KPA = 30, KPB = 20, KPC = 10;
         const int BD = 500;
         const double KER = (q_idx < BD) ? KPA + ((double)(KPB - KPA)/BD) * q_idx :
                                           KPB + ((double)(KPC - KPB)/(NUM_Q - BD)) * (q_idx - BD); 
         const double ratio = 1.0;
-        //cerr << q_idx << " : " << KER << endl;
-        //const int KER = 7;
-        //const int KER = 10;
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
             //cerr << y << " " << x << endl;
             if(dir == Dir::U){
-                predicted_score += init + row[x][y-1];
                 for(int k = -KER; k <= KER; k++){
                     if(y-1+k < 0 || NUM_GRID-1 <= y-1+k) continue;
                     row_val[x][y-1+k] += 1 + ratio * (KER - abs(k));
                 }
             }
             else if(dir == Dir::D){
-                predicted_score += init + row[x][y];
                 for(int k = -KER; k <= KER; k++){
                     if(y+k < 0 || NUM_GRID-1 <= y+k) continue;
                     row_val[x][y+k] += 1 + ratio * (KER - abs(k));
                 }
             }
             else if(dir == Dir::L){
-                predicted_score += init + col[y][x-1];
                 for(int k = -KER; k <= KER; k++){
                     if(x-1+k < 0 || NUM_GRID-1 <= x-1+k) continue;
                     col_val[y][x-1+k] += 1 + ratio * (KER - abs(k));
                 }
             }
             else if(dir == Dir::R){
-                predicted_score += init + col[y][x];
                 for(int k = -KER; k <= KER; k++){
                     if(x+k < 0 || NUM_GRID-1 <= x+k) continue;
                     col_val[y][x+k] += 1 + ratio * (KER - abs(k));
@@ -447,61 +373,44 @@ struct Field{
         calc_ratio(row_val, row_max);
         calc_ratio(col_val, col_max);
 
-        //// 10^3 ~ 10^5
-        //ll loss_score = abs(score - predicted_score);
-        ll loss_score = score - predicted_score;
-        //static ll loss_score_sum;
-        //if(q_idx > 50)
-        //    loss_score_sum += abs(loss_score);
-        //if(q_idx % 100 == 0)
-            //cerr << abs(loss_score) << endl;
-            //cerr << loss_score_sum << endl;
-        //cerr << score << " " << predicted_score << endl;
-        //    cerr << abs(score - predicted_score) << endl;
-
-        auto edge_update = [&q_idx, &score, &path, &predicted_score, &loss_score](auto& edge_weight, auto& edge_val, auto& edge_max, auto lower_bound){
-            ////TODO: 問題毎にこの辺を可変にしたい
-            ///const double PA = 1.0,  PB = 1.0;
-            ///const double PA = 0.6,  PB = 0.4;
-            //const double PA = 0.8,  PB = 0.6;
-            //const double Pmax = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
-            //
-            //const double PA = 0.0,  PB = 0.8;
-            //const ll LOSS_MAX = 10000;
-            //const ll loss_score_clip = min(abs(loss_score), LOSS_MAX);
-            //const double Pmax = PA + ((double)(PB - PA)/LOSS_MAX) * loss_score_clip;
-            
-            //const double learning_rate = 0.03 * cos((M_PI / 2)/NUM_Q * q_idx);
-            const double learning_rate = 0.02 * cos((M_PI / 2)/NUM_Q * q_idx);
-            //const double learning_rate = (q_idx < 500) ? 0.03 : (q_idx < 800) ? 0.006 : 0.002;
-            const double lambda = 0.00;
+        auto loss_update = [&loss_score](auto& edge_loss, auto& edge_val, auto& edge_max){
             REP(i, NUM_GRID){
                 if(edge_max[i] < 0.0001) continue;
                 REP(j, NUM_GRID-1){
-                    //const double update_score = (double)score / path.size();
-                    //const double update_score = (double)score * ((double)edge_weight[i][j] / predicted_score);
-                    //const double P = Pmax * (edge_val[i][j] / edge_max[i]);
-                    /////何故か重みが0である辺が出現する --> 経路探索不可
-                    /////const double update_score = (double)score * ((double)edge_weight[i][j] / predicted_score) * (edge_val[i][j] / edge_max[i]);
-                    /////const double P = Pmax;
-                    //edge_weight[i][j] = ((1-P)*edge_weight[i][j] + P*update_score);
+                    edge_loss[i][j] = loss_score * (edge_val[i][j] / edge_max[i]);
+                }
+            }
+        };
+        loss_update(row_loss, row_val, row_max);
+        loss_update(col_loss, col_val, col_max);
+    }
 
-                    //const double loss = edge_weight[i][j] * (((double)score / predicted_score) - 1.0) * (edge_val[i][j] / edge_max[i]);
-                    //const double loss = ((double)score - predicted_score) * (edge_val[i][j] / edge_max[i]);
-                    const double loss = ((double)score - predicted_score) * (edge_val[i][j] / edge_max[i]) + lambda * edge_weight[i][j];
-                    //if(q_idx % 10 == 0 && i == 15 && j == 15){
-                    //    //cerr << "loss : " << learning_rate * loss << endl;
-                    //    //cerr << "loss : " << loss << endl;
-                    //    cerr << "edge_weight (" << i << ", " << j << ") : " << edge_weight[i][j] << " --> " << edge_weight[i][j] + learning_rate*loss << endl;
-                    //}
-                    edge_weight[i][j] += learning_rate * loss;
+    //// ある行・列に対し、通った辺を中心として更新値を減衰
+    void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
+        //// edge_loss[NUM_GRID][NUM_GRID-1]
+        vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1));
+        vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1));
+
+        //// 10^3 ~ 10^5
+        ll loss_score = calc_loss(start, score, path);
+        //if(q_idx % 100 == 0)
+            //cerr << abs(loss_score) << endl;
+            //cerr << loss_score_sum << endl;
+
+        loss_distribution(q_idx, start, path, loss_score, row_loss, col_loss);
+
+        auto edge_update = [&q_idx](auto& edge_weight, auto& edge_loss, auto lower_bound){
+            const double learning_rate = 0.02 * cos((M_PI / 2)/NUM_Q * q_idx);
+            const double lambda = 0.00;
+            REP(i, NUM_GRID){
+                REP(j, NUM_GRID-1){
+                    edge_weight[i][j] += static_cast<ll>(learning_rate * (edge_loss[i][j] + lambda * edge_weight[i][j]));
                     edge_weight[i][j] = max(lower_bound, edge_weight[i][j]);
                 }
             }
         };
-        edge_update(row, row_val, row_max, -init+1);
-        edge_update(col, col_val, col_max, -init+1);
-
+        edge_update(row, row_loss, -init+1);
+        edge_update(col, col_loss, -init+1);
     }
 
     //// 得られた経路長から、dist配列を更新 (推定)
@@ -626,21 +535,24 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 int main(){
     //// TODO
     //// 未探索の経路から優先的に使用?
-    Field field(2000);
+    Field field(3000);
     //Field field(1000);
     //Field field(100);
     
     //const int init_epoch = 74;
-    vector<Pos> mem_player(NUM_Q), mem_goal(NUM_Q);
-    vector<ll> mem_score(NUM_Q);
+    vector<Pos> mem_start(NUM_Q), mem_goal(NUM_Q);
+    vector<ll> mem_score(NUM_Q), mem_loss(NUM_Q);
     vector<vector<Dir>> mem_path(NUM_Q);
+    //// {score, idx}
+    using P = pair<ll, int>;
+    priority_queue<P> que;
     for(int qi = 0; qi < NUM_Q; qi++){
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
         //cerr << si << " " << sj << " " << ti << " " << tj << endl;
-        Pos player(si, sj), goal(ti, tj);
+        Pos start(si, sj), goal(ti, tj);
 
-        vector<Dir> path = answer(qi, player, goal, field);
+        vector<Dir> path = answer(qi, start, goal, field);
         string ans = path2string(path);
         cout << ans << endl;
 
@@ -648,10 +560,14 @@ int main(){
         cin >> score;
         //cerr << score << endl;
         
-        mem_player[qi] = player;
+        field.update_path(qi, start, goal, score, path);
+
+        mem_start[qi] = start;
         mem_goal[qi] = goal;
         mem_score[qi] = score;
         mem_path[qi] = path;
+        mem_loss[qi] = field.calc_loss(start, score, path);
+        que.push(P(abs(mem_loss[qi]), qi));
 
         ///TODO
         //static ll sum = 0;
@@ -662,28 +578,48 @@ int main(){
         //    field.initialize_field(sum / init_epoch);
         //    cerr << sum / init_epoch << endl;
         //    for(int tqi = 0; tqi < qi; tqi++){
-        //        field.update_path(tqi, mem_player[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
+        //        field.update_path(tqi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
         //    }
-        //    field.update_path(qi, player, goal, score, path);
+        //    field.update_path(qi, start, goal, score, path);
         //}
         //else{
-        //    field.update_path(qi, player, goal, score, path);
+        //    field.update_path(qi, start, goal, score, path);
         //}
-        
-        field.update_path(qi, player, goal, score, path);
 
         ////TODO: パラメータ調整
         if(qi >= 75 && qi % 5 == 0){
+            //// 960671688
             static mt19937 engine = mt19937(1);
             uniform_int_distribution<> rand(0, qi-1);
             //uniform_real_distribution<> scale((1.0/1.1), (1.0/0.9));
-            for(int i = 0; i < qi/5; i++){
+            for(int i = 0; i < qi/4; i++){
                 int tqi = rand(engine);
-                field.update_path(qi, mem_player[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
+                field.update_path(qi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
+                mem_loss[tqi] = field.calc_loss(mem_start[tqi], mem_score[tqi], mem_path[tqi]);
             }
+
+            //// 951390700
+            //vector<int> q_index;
+            //for(int i = 0; i < qi/4; i++){
+            //    while(1){
+            //        auto [s, tqi] = que.top();
+            //        que.pop();
+            //        if(mem_loss[tqi] != s)
+            //            que.push(P(mem_loss[tqi], tqi));
+            //        else{
+            //            q_index.push_back(tqi);
+            //            break;
+            //        }
+            //    }
+            //}
+            //for(auto& tqi : q_index){
+            //    field.update_path(qi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
+            //    mem_loss[tqi] = field.calc_loss(mem_start[tqi], mem_score[tqi], mem_path[tqi]);
+            //    que.push(P(mem_loss[tqi], tqi));
+            //}
         }
         //for(int tqi = qi-10; tqi >= 0; tqi -= 100){
-        //    field.update_path(qi, mem_player[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
+        //    field.update_path(qi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
         //}
     }
 
