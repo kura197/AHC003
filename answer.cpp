@@ -201,7 +201,7 @@ struct Field{
                 //row[i][j] = init;
                 //row[i][j] = init * rand(engine);
                 //row[i][j] = 1000 * rand(engine);
-                row[i][j] = 100 * rand(engine);
+                row[i][j] = 50 * rand(engine);
                 //row[i][j] = 1000;
             }
         }
@@ -210,7 +210,7 @@ struct Field{
                 //col[i][j] = init;
                 //col[i][j] = init * rand(engine);
                 //col[i][j] = 1000 * rand(engine);
-                col[i][j] = 100 * rand(engine);
+                col[i][j] = 50 * rand(engine);
                 //col[i][j] = 1000;
             }
         }
@@ -541,7 +541,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     //    path = path_naive(start, goal, true);
     //}
     //if(q_idx < 75 && q_idx % 2 == 0){
-    if(q_idx < 75 && true){
+    if(q_idx < 50 && true){
         path = path_naive(start, goal, false);
     }
     else if(q_idx < 150 && false){
@@ -557,8 +557,18 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     return check_path(start, goal, path);
 }
 
-int main(){
-    Field field(3000);
+int main(int argc, char* argv[]){
+    //// TODO:test
+    vector<string> args(argv, argv + argc);
+    if(argc != 3){
+        cerr << "Error" << endl;
+        return -1;
+    }
+    const int init_val = stoi(args[1]);
+    const int bsize = stoi(args[2]);
+    //cerr << init_val << endl;
+    //Field field(3000);
+    Field field(init_val);
     
     Memory mem;
     //// {score, idx}
@@ -584,14 +594,15 @@ int main(){
         field.save_path(start, goal, score, path);
         field.update_path(qi, {qi}, mem);
 
-        que.push(P(abs(loss), qi));
+        //que.push(P(abs(loss), qi));
 
         ////TODO: パラメータ調整
         if(qi >= 25 && qi % 5 == 0){
             //// 960671688
             static mt19937 engine = mt19937(1);
             uniform_int_distribution<> rand(max(0, qi-500), qi);
-            const int BSIZE = 10;
+            //const int BSIZE = 10;
+            const int BSIZE = bsize;
             for(int i = 0; i < 20; i++){
                 vector<int> indices;
                 for(int b = 0; b < BSIZE; b++)
