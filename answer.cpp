@@ -354,7 +354,8 @@ struct Field{
                 predicted_score += init + col[y][x];
             player.next(dir);
         }
-        ll loss_score = score - predicted_score;
+        //ll loss_score = score - predicted_score;
+        ll loss_score = predicted_score - score;
         return loss_score;
     }
 
@@ -429,37 +430,6 @@ struct Field{
         loss_update(col_loss, col_val, col_max);
     }
 
-    /*
-    //// ある行・列に対し、通った辺を中心として更新値を減衰
-    //// TODO:deprecated
-    void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        //// edge_loss[NUM_GRID][NUM_GRID-1]
-        vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
-        vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
-
-        //// 10^3 ~ 10^5
-        ll loss_score = calc_loss(start, score, path);
-        //if(q_idx % 100 == 0)
-            //cerr << abs(loss_score) << endl;
-            //cerr << loss_score_sum << endl;
-
-        loss_distribution(q_idx, start, path, loss_score, row_loss, col_loss);
-
-        auto edge_update = [&q_idx](auto& edge_weight, auto& edge_loss, auto lower_bound){
-            const double learning_rate = 0.02 * cos((M_PI / 2)/NUM_Q * q_idx);
-            const double lambda = 0.00;
-            REP(i, NUM_GRID){
-                REP(j, NUM_GRID-1){
-                    edge_weight[i][j] += static_cast<ll>(learning_rate * (edge_loss[i][j] + lambda * edge_weight[i][j]));
-                    edge_weight[i][j] = max(lower_bound, edge_weight[i][j]);
-                }
-            }
-        };
-        edge_update(row, row_loss, -init+1);
-        edge_update(col, col_loss, -init+1);
-    }
-    */
-
     //// ミニバッチ単位で更新
     void update_path_batch(const int epoch, const vector<int>& q_indices, const Memory& mem){
         //// edge_loss[NUM_GRID][NUM_GRID-1]
@@ -476,10 +446,10 @@ struct Field{
         int batch_size = q_indices.size();
         auto edge_update = [&epoch, &batch_size](auto& edge_weight, auto& edge_loss, auto lower_bound){
             const double learning_rate = 0.04 * cos((M_PI / 2)/NUM_Q * epoch);
-            const double lambda = 0.00;
+            const double lambda = 0.000;
             REP(i, NUM_GRID){
                 REP(j, NUM_GRID-1){
-                    edge_weight[i][j] += static_cast<ll>(learning_rate * ((edge_loss[i][j] / batch_size) + lambda * edge_weight[i][j]));
+                    edge_weight[i][j] -= static_cast<ll>(learning_rate * ((edge_loss[i][j] / batch_size) + lambda * edge_weight[i][j]));
                     edge_weight[i][j] = max(lower_bound, edge_weight[i][j]);
                 }
             }
@@ -487,13 +457,6 @@ struct Field{
         edge_update(row, row_loss, -init+1);
         edge_update(col, col_loss, -init+1);
     }
-
-    //// 得られた経路長から、dist配列を更新 (推定)
-    //void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path, const Memory& mem){
-    //    //update_path_decay(q_idx, start, goal, score, path);
-    //    update_path_decay(q_idx, start, goal, score, path);
-    //    //update_path_batch(q_idx, {q_idx}, mem);
-    //}
 
     void update_path(const int epoch, const vector<int>& q_indices, const Memory& mem){
         update_path_batch(epoch, q_indices, mem);
@@ -595,16 +558,8 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
 }
 
 int main(){
-    //// TODO
-    //// 未探索の経路から優先的に使用?
     Field field(3000);
-    //Field field(1000);
-    //Field field(100);
     
-    //const int init_epoch = 74;
-    //vector<Pos> mem_start(NUM_Q), mem_goal(NUM_Q);
-    //vector<ll> mem_score(NUM_Q), mem_loss(NUM_Q);
-    //vector<vector<Dir>> mem_path(NUM_Q);
     Memory mem;
     //// {score, idx}
     using P = pair<ll, int>;
@@ -631,39 +586,13 @@ int main(){
 
         que.push(P(abs(loss), qi));
 
-        ///TODO
-        //static ll sum = 0;
-        //if(qi < init_epoch){
-        //    sum += score / path.size();
-        //}
-        //else if(qi == init_epoch){
-        //    field.initialize_field(sum / init_epoch);
-        //    cerr << sum / init_epoch << endl;
-        //    for(int tqi = 0; tqi < qi; tqi++){
-        //        field.update_path(tqi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
-        //    }
-        //    field.update_path(qi, start, goal, score, path);
-        //}
-        //else{
-        //    field.update_path(qi, start, goal, score, path);
-        //}
-
         ////TODO: パラメータ調整
-        if(qi >= 75 && qi % 5 == 0){
+        if(qi >= 25 && qi % 5 == 0){
             //// 960671688
             static mt19937 engine = mt19937(1);
-            uniform_int_distribution<> rand(0, qi-1);
-            //uniform_real_distribution<> scale((1.0/1.1), (1.0/0.9));
-            //for(int i = 0; i < qi/4; i++){
-            //    int tqi = rand(engine);
-            //    auto [_start, _goal, _score, _loss, _path] = mem.get(tqi);
-            //    field.update_path(qi, {tqi}, mem);
-            //    auto new_loss = field.calc_loss(_start, _score, _path);
-            //    mem.update_loss(tqi, new_loss);
-            //}
-            
-            const int BSIZE = 5;
-            for(int i = 0; i < qi/5/BSIZE; i++){
+            uniform_int_distribution<> rand(max(0, qi-500), qi);
+            const int BSIZE = 10;
+            for(int i = 0; i < 20; i++){
                 vector<int> indices;
                 for(int b = 0; b < BSIZE; b++)
                     indices.push_back(rand(engine));
