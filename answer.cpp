@@ -121,6 +121,34 @@ ostream& operator<<(ostream& os, const Pos& pos){
     return os;
 }
 
+/// for saving past inputs, outputs, ...
+struct Memory{
+    using T = tuple<Pos, Pos, ll, ll, vector<Dir>>;
+    array<Pos, NUM_Q> start, goal;
+    array<ll, NUM_Q> score, loss;
+    array<vector<Dir>, NUM_Q> path;
+
+    void update(const int idx, const Pos start, const Pos goal, const ll score, const ll loss, const vector<Dir>& path){
+        this->start[idx] = start;
+        this->goal[idx] = goal;
+        this->score[idx] = score;
+        this->loss[idx] = loss;
+        this->path[idx] = path;
+    }
+
+    void update_loss(const int idx, const ll loss){
+        this->loss[idx] = loss;
+    }
+
+    T get(const int idx){
+        if(idx < 0 || idx >= NUM_Q)
+            assert(false);
+
+        return T(start[idx], goal[idx], score[idx], loss[idx], path[idx]);
+    }
+
+};
+
 //// for graph analysis
 struct Field{
     //// row[i][j] := i列目のj番目の辺 : (j, i) --> (j+1, i)
@@ -145,6 +173,22 @@ struct Field{
         //engine = mt19937(seed_gen());
         engine = mt19937(100);
         initialize_field(init);
+    }
+
+    void save_path(Pos start, Pos goal, ll score, vector<Dir>& path){
+        ///score = (1.0 / 0.9) * score;
+        /// TODO: 同じ頂点対の場合,良い方を採用
+        auto tmp_score = (1.0 / 0.9) * score;
+        ex_edge_cost[mp(start, goal)] = ex_edge_cost[mp(start, goal)] = tmp_score;
+        ex_edge[start].push_back(mp(tmp_score, goal));
+        ex_edge[goal].push_back(mp(tmp_score, start));
+        ex_path[mp(start, goal)] = path;
+        //// 反転 & 逆順
+        ex_path[mp(goal, start)] = vector<Dir>();
+        auto tmp = path;
+        reverse(tmp.begin(), tmp.end());
+        for(auto& dir : tmp)
+            ex_path[mp(goal, start)].push_back(rev_dir(dir));
     }
 
     void initialize_field(ll _init){
@@ -211,7 +255,7 @@ struct Field{
             }
 
             //// ワープする場合
-            //// TODO : check
+            //// TODO : ほぼ変化なし？
             for(auto& [cost, npos] : ex_edge[Pos(y, x)]){
                 int ny = npos.y;
                 int nx = npos.x;
@@ -377,7 +421,7 @@ struct Field{
             REP(i, NUM_GRID){
                 if(edge_max[i] < 0.0001) continue;
                 REP(j, NUM_GRID-1){
-                    edge_loss[i][j] = loss_score * (edge_val[i][j] / edge_max[i]);
+                    edge_loss[i][j] += loss_score * (edge_val[i][j] / edge_max[i]);
                 }
             }
         };
@@ -388,8 +432,8 @@ struct Field{
     //// ある行・列に対し、通った辺を中心として更新値を減衰
     void update_path_decay(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
         //// edge_loss[NUM_GRID][NUM_GRID-1]
-        vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1));
-        vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1));
+        vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
+        vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
 
         //// 10^3 ~ 10^5
         ll loss_score = calc_loss(start, score, path);
@@ -413,27 +457,36 @@ struct Field{
         edge_update(col, col_loss, -init+1);
     }
 
+    //// ミニバッチ単位で更新
+    //void update_path_batch(const vector<int>& q_indices, const vector<Pos>& starts, const vector<Pos>& goals, const vector<ll>& scores, vector<Dir>& path){
+    //    //// edge_loss[NUM_GRID][NUM_GRID-1]
+    //    vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
+    //    vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
+
+    //    //// 10^3 ~ 10^5
+    //    ll loss_score = calc_loss(start, score, path);
+    //    //if(q_idx % 100 == 0)
+    //        //cerr << abs(loss_score) << endl;
+    //        //cerr << loss_score_sum << endl;
+
+    //    loss_distribution(q_idx, start, path, loss_score, row_loss, col_loss);
+
+    //    auto edge_update = [&q_idx](auto& edge_weight, auto& edge_loss, auto lower_bound){
+    //        const double learning_rate = 0.02 * cos((M_PI / 2)/NUM_Q * q_idx);
+    //        const double lambda = 0.00;
+    //        REP(i, NUM_GRID){
+    //            REP(j, NUM_GRID-1){
+    //                edge_weight[i][j] += static_cast<ll>(learning_rate * (edge_loss[i][j] + lambda * edge_weight[i][j]));
+    //                edge_weight[i][j] = max(lower_bound, edge_weight[i][j]);
+    //            }
+    //        }
+    //    };
+    //    edge_update(row, row_loss, -init+1);
+    //    edge_update(col, col_loss, -init+1);
+    //}
+
     //// 得られた経路長から、dist配列を更新 (推定)
     void update_path(int q_idx, Pos start, Pos goal, ll score, vector<Dir>& path){
-        ///score = (1.0 / 0.9) * score;
-        /// TODO: 同じ頂点対の場合,良い方を採用
-        {
-            auto tmp_score = (1.0 / 0.9) * score;
-            ex_edge_cost[mp(start, goal)] = ex_edge_cost[mp(start, goal)] = tmp_score;
-            ex_edge[start].push_back(mp(tmp_score, goal));
-            ex_edge[goal].push_back(mp(tmp_score, start));
-            ex_path[mp(start, goal)] = path;
-            //// 反転 & 逆順
-            ex_path[mp(goal, start)] = vector<Dir>();
-            auto tmp = path;
-            reverse(tmp.begin(), tmp.end());
-            for(auto& dir : tmp)
-                ex_path[mp(goal, start)].push_back(rev_dir(dir));
-        }
-
-        //if(q_idx % 4 == 0)
-        //    update_path_uniform(q_idx, start, goal, score, path);
-        //else
         update_path_decay(q_idx, start, goal, score, path);
     }
 };
@@ -540,9 +593,10 @@ int main(){
     //Field field(100);
     
     //const int init_epoch = 74;
-    vector<Pos> mem_start(NUM_Q), mem_goal(NUM_Q);
-    vector<ll> mem_score(NUM_Q), mem_loss(NUM_Q);
-    vector<vector<Dir>> mem_path(NUM_Q);
+    //vector<Pos> mem_start(NUM_Q), mem_goal(NUM_Q);
+    //vector<ll> mem_score(NUM_Q), mem_loss(NUM_Q);
+    //vector<vector<Dir>> mem_path(NUM_Q);
+    Memory mem;
     //// {score, idx}
     using P = pair<ll, int>;
     priority_queue<P> que;
@@ -560,14 +614,17 @@ int main(){
         cin >> score;
         //cerr << score << endl;
         
+        field.save_path(start, goal, score, path);
         field.update_path(qi, start, goal, score, path);
 
-        mem_start[qi] = start;
-        mem_goal[qi] = goal;
-        mem_score[qi] = score;
-        mem_path[qi] = path;
-        mem_loss[qi] = field.calc_loss(start, score, path);
-        que.push(P(abs(mem_loss[qi]), qi));
+        //mem_start[qi] = start;
+        //mem_goal[qi] = goal;
+        //mem_score[qi] = score;
+        //mem_loss[qi] = field.calc_loss(start, score, path);
+        //mem_path[qi] = path;
+        auto loss = field.calc_loss(start, score, path);
+        mem.update(qi, start, goal, score, loss, path);
+        que.push(P(abs(loss), qi));
 
         ///TODO
         //static ll sum = 0;
@@ -594,8 +651,10 @@ int main(){
             //uniform_real_distribution<> scale((1.0/1.1), (1.0/0.9));
             for(int i = 0; i < qi/4; i++){
                 int tqi = rand(engine);
-                field.update_path(qi, mem_start[tqi], mem_goal[tqi], mem_score[tqi], mem_path[tqi]);
-                mem_loss[tqi] = field.calc_loss(mem_start[tqi], mem_score[tqi], mem_path[tqi]);
+                auto [_start, _goal, _score, _loss, _path] = mem.get(tqi);
+                field.update_path(qi, _start, _goal, _score, _path);
+                auto new_loss = field.calc_loss(_start, _score, _path);
+                mem.update_loss(tqi, new_loss);
             }
 
             //// 951390700
