@@ -447,12 +447,9 @@ struct Field{
 
         int batch_size = q_indices.size();
         auto edge_update = [&epoch, &batch_size](auto& edge_weight, auto& edge_loss, auto lower_bound){
-            //const double learning_rate = 0.06 * cos((M_PI / 2)/NUM_Q * epoch);
-            const double learning_rate = 1.0;
-            const double lambda = 0.00;
             REP(i, NUM_GRID){
                 REP(j, NUM_GRID-1){
-                    edge_weight[i][j] -= static_cast<ll>(learning_rate * ((edge_loss[i][j] / batch_size) + lambda * edge_weight[i][j]));
+                    edge_weight[i][j] -= static_cast<ll>(edge_loss[i][j] / batch_size);
                     edge_weight[i][j] = max(lower_bound, edge_weight[i][j]);
                 }
             }
@@ -476,7 +473,8 @@ vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
     int idx = 0;
     while(player != goal){
         Dir dir;
-        if(idx % 2 == 0){
+        //if(idx % 2 == 0){
+        if(zig){
             if(player.y < goal.y)
                 dir = Dir::D;
             else if(player.y > goal.y)
@@ -500,7 +498,7 @@ vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
         player.next(dir);
         path.push_back(dir);
         ////TODO: 直線で探索すべき？
-        idx = (zig) ? (idx + 1) % 2 : idx;
+        //idx = (zig) ? (idx + 1) % 2 : idx;
     }
 
     return path;
