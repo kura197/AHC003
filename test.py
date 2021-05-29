@@ -5,8 +5,11 @@ import pdb
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--init_val', default=3000, type=int, help='[TEST] initial value')
-parser.add_argument('--bsize', default=5, type=int, help='[TEST] batch size')
+parser.add_argument('--init_val', default=4000, type=int, help='[TEST] initial value')
+parser.add_argument('--field_var', default=50, type=int, help='')
+parser.add_argument('--naive_epoch', default=50, type=int, help='')
+parser.add_argument('--ker_ratio', default=1.25, type=float, help='')
+parser.add_argument('--ker_len', default=10, type=int, help='')
 
 TESTER = '/home/kura/Documents/atcoder/AHC003/tools/target/release/tester'
 TEST_DIR = '/home/kura/Documents/atcoder/AHC003/tools/in'
@@ -27,7 +30,7 @@ def run_process(test_num, args):
     arg1 = os.path.join(TEST_DIR, '{:04}.txt'.format(test_num))
     arg2 = ANSWER
     #cmd = [TESTER, arg1, arg2]
-    cmd = [TESTER, arg1, arg2, str(args.init_val), str(args.bsize)]
+    cmd = [TESTER, arg1, arg2, str(args.init_val), str(args.field_var), str(args.naive_epoch), str(args.ker_ratio), str(args.ker_len)]
     #print(cmd + ' ' + arg1 + ' ' + arg2)
     proc = subprocess.Popen(cmd, encoding='utf-8', stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
     return proc

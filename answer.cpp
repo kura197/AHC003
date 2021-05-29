@@ -167,11 +167,11 @@ struct Field{
     /// for random value
     mt19937 engine;
 
-    Field(ll _init) : init(_init){
+    Field(ll _init, const ll var) : init(_init){
         //random_device seed_gen;
         //engine = mt19937(seed_gen());
         engine = mt19937(100);
-        initialize_field(init);
+        initialize_field(init, var);
     }
 
     void save_path(Pos start, Pos goal, ll score, vector<Dir>& path){
@@ -205,7 +205,7 @@ struct Field{
         }
     }
 
-    void initialize_field(ll _init){
+    void initialize_field(ll _init, const ll var){
         init = _init;
         ////TODO
         //static uniform_real_distribution<> rand(0.95, 1.05);
@@ -215,7 +215,7 @@ struct Field{
                 //row[i][j] = init;
                 //row[i][j] = init * rand(engine);
                 //row[i][j] = 1000 * rand(engine);
-                row[i][j] = 50 * rand(engine);
+                row[i][j] = var * rand(engine);
                 //row[i][j] = 1000;
                 row_cnt[i][j] = 0;
             }
@@ -225,7 +225,7 @@ struct Field{
                 //col[i][j] = init;
                 //col[i][j] = init * rand(engine);
                 //col[i][j] = 1000 * rand(engine);
-                col[i][j] = 50 * rand(engine);
+                col[i][j] = var * rand(engine);
                 //col[i][j] = 1000;
                 col_cnt[i][j] = 0;
             }
@@ -396,7 +396,7 @@ struct Field{
     }
 
     //// lossを近傍の頂点へ分配する
-    void loss_distribution(int q_idx, Pos start, vector<Dir>& path, ll loss_score, auto& row_loss, auto& col_loss){
+    void loss_distribution(int q_idx, Pos start, vector<Dir>& path, ll loss_score, auto& row_loss, auto& col_loss, const double ratio, const int len){
         //// 辺のloss値
         vector<vector<double>> row_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
         vector<vector<double>> col_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
@@ -435,8 +435,8 @@ struct Field{
         //vector<double> kernel = {1, 2, 4, 8, 16, 32};
         vector<double> kernel;
         double val = 1.0;
-        const double ratio = 1.25;
-        const int len = 10;
+        //const double ratio = 1.25;
+        //const int len = 10;
         for(int i = 0; i < len; i++){
             kernel.push_back(val);
             val *= ratio;
@@ -471,7 +471,7 @@ struct Field{
     }
 
     //// ミニバッチ単位で更新
-    void update_path_batch(const int epoch, const vector<int>& q_indices, const Memory& mem){
+    void update_path_batch(const int epoch, const vector<int>& q_indices, const Memory& mem, const double ratio, const int len){
         //// edge_loss[NUM_GRID][NUM_GRID-1]
         vector<vector<double>> row_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
         vector<vector<double>> col_loss(NUM_GRID, vector<double>(NUM_GRID-1, 0.0));
@@ -480,7 +480,7 @@ struct Field{
         for(auto& idx : q_indices){
             auto [start, goal, score, path] = mem.get(idx);
             ll loss_score = calc_loss(start, score, path);
-            loss_distribution(epoch, start, path, loss_score, row_loss, col_loss);
+            loss_distribution(epoch, start, path, loss_score, row_loss, col_loss, ratio, len);
         }
 
         int batch_size = q_indices.size();
@@ -496,11 +496,11 @@ struct Field{
         edge_update(col, col_loss, -init+1);
     }
 
-    void update_path(const int epoch, const vector<int>& q_indices, const Memory& mem){
+    void update_path(const int epoch, const vector<int>& q_indices, const Memory& mem, const double ratio, const int len){
         if(q_indices.size() == 0)
             return;
 
-        update_path_batch(epoch, q_indices, mem);
+        update_path_batch(epoch, q_indices, mem, ratio, len);
     }
 };
 
@@ -566,56 +566,10 @@ vector<Dir> check_path(Pos start, Pos goal, const vector<Dir>& path){
     return valid_path;
 }
 
-vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
+vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field, const int NAIVE_EPOCH){
     vector<Dir> path;
-    //const double PA = 1.0,  PB = -10.0;
-    //const double P = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
-    ////cerr << q_idx << " : " << P << endl;
-    ///static mt19937 engine = mt19937(1);
-    //static uniform_real_distribution<> rand(0, 1);
-
-    //if(rand(engine) < P){
-    //    path = path_naive(start, goal, false);
-    //}
-    //if(q_idx < 75 && q_idx % 2 == 0){
-    //if(q_idx < 75 && true){
-    if(q_idx == 0 && false){
-        const int my[] = {0, 0, 29, 29};
-        const int mx[] = {0, 29, 0, 29};
-        Pos player = start;
-        for(int i = 0; i < 4; i++){
-            Pos mid(my[i], mx[i]);
-            auto tmp = path_naive(player, mid);
-            for(auto& t : tmp)
-                path.push_back(t);
-            player = mid;
-        }
-        auto tmp = path_naive(player, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
-    }
-    else if(q_idx < 50 && true){
+    if(q_idx < NAIVE_EPOCH){
         path = path_naive(start, goal, false);
-    }
-    else if(q_idx < 50 && false){
-        Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
-        path = path_naive(start, mid);
-        auto tmp = path_naive(mid, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
-    }
-    else if(q_idx < 50 && false){
-        //const int my[] = {0, 0, 29, 29};
-        //const int mx[] = {0, 29, 0, 29};
-        //Pos mid(my[q_idx%4], mx[q_idx%4]);
-
-        static mt19937 engine = mt19937(1);
-        static uniform_int_distribution<> rand(0, 29);
-        Pos mid(rand(engine), rand(engine));
-        path = path_naive(start, mid);
-        auto tmp = path_naive(mid, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
     }
     else
         path = field.get_path(q_idx, start, goal);
@@ -636,14 +590,22 @@ double calc_all_loss(const int idx, const Field& field, const Memory& mem){
 
 int main(int argc, char* argv[]){
     vector<string> args(argv, argv + argc);
-    if(argc != 3){
+    if(argc != 6){
         cerr << "Error" << endl;
         return -1;
     }
+    //// [1000, 8000]
     const int init_val = stoi(args[1]);
-    const int bsize = stoi(args[2]);
+    //// [0, 5000]
+    const int field_var = stoi(args[2]);
+    //// [0, 400]
+    const int naive_epoch = stoi(args[3]);
+    //// [0.5, 9.5]
+    const double ker_ratio = stod(args[4]);
+    //// [1, 30]
+    const int ker_len = stoi(args[5]);
 
-    Field field(4000);
+    Field field(init_val, field_var);
     
     static mt19937 engine = mt19937(10);
     const int BSIZE = 5;
@@ -657,7 +619,7 @@ int main(int argc, char* argv[]){
         //cerr << si << " " << sj << " " << ti << " " << tj << endl;
         Pos start(si, sj), goal(ti, tj);
 
-        vector<Dir> path = answer(qi, start, goal, field);
+        vector<Dir> path = answer(qi, start, goal, field, naive_epoch);
         string ans = path2string(path);
         cout << ans << endl;
 
@@ -677,7 +639,7 @@ int main(int argc, char* argv[]){
         field.save_path(start, goal, score, path);
         //field.update_path(qi, {qi}, mem);
         REP(i,5)
-            field.update_path(qi, {qi}, mem);
+            field.update_path(qi, {qi}, mem, ker_ratio, ker_len);
 
         //vector<int> indices;
         //for(int i = qi; i >= 0; i-=100){
@@ -699,7 +661,7 @@ int main(int argc, char* argv[]){
                 for(auto& idx : qi_vec){
                     local_indices.push_back(idx);
                     if(local_indices.size() == BSIZE){
-                        field.update_path(qi, local_indices, mem);
+                        field.update_path(qi, local_indices, mem, ker_ratio, ker_len);
                         local_indices.clear();
                     }
                 }
