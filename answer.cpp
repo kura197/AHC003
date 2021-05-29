@@ -151,6 +151,10 @@ struct Field{
     //// col[i][j] := i行目のj番目の辺 : (i, j) --> (i, j+1)
     array<array<ll, NUM_GRID-1>, NUM_GRID> col;
 
+    //// update counter
+    array<array<ll, NUM_GRID-1>, NUM_GRID> row_cnt;
+    array<array<ll, NUM_GRID-1>, NUM_GRID> col_cnt;
+
     //// 各epochで得られるスコアを基にした辺
     //// ex_edge[Pos(y, x)] --> {cost, Pos(ny, nx)}
     map<Pos, vector<pair<ll, Pos>>, PosCompare> ex_edge;
@@ -186,6 +190,21 @@ struct Field{
             ex_path[mp(goal, start)].push_back(rev_dir(dir));
     }
 
+    void print_edge(){
+        REP(i, NUM_GRID){
+            REP(j, NUM_GRID-1){
+                cerr << init + col[i][j] << " ";
+            }
+            cerr << endl;
+        }
+        REP(i, NUM_GRID-1){
+            REP(j, NUM_GRID){
+                cerr << init + row[j][i] << " ";
+            }
+            cerr << endl;
+        }
+    }
+
     void initialize_field(ll _init){
         init = _init;
         ////TODO
@@ -198,6 +217,7 @@ struct Field{
                 //row[i][j] = 1000 * rand(engine);
                 row[i][j] = 100 * rand(engine);
                 //row[i][j] = 1000;
+                row_cnt[i][j] = 0;
             }
         }
         REP(i, NUM_GRID){
@@ -207,23 +227,25 @@ struct Field{
                 //col[i][j] = 1000 * rand(engine);
                 col[i][j] = 100 * rand(engine);
                 //col[i][j] = 1000;
+                col_cnt[i][j] = 0;
             }
         }
     }
 
     //// (y, x) から dir方向の辺の重みを取得
-    ll get_dist(int y, int x, Dir dir){
+    ll get_dist(int y, int x, Dir dir, bool search=false) const{
+        static const int C = 4;
         switch(dir){
-            case Dir::U: return init + row[x][y-1];
-            case Dir::D: return init + row[x][y];
-            case Dir::L: return init + col[y][x-1];
-            case Dir::R: return init + col[y][x];
+            case Dir::U: return max(1LL, init + row[x][y-1] - ((search) ? 500*max(0LL, (C - row_cnt[x][y-1])) : 0));
+            case Dir::D: return max(1LL, init + row[x][y-0] - ((search) ? 500*max(0LL, (C - row_cnt[x][y-0])) : 0));
+            case Dir::L: return max(1LL, init + col[y][x-1] - ((search) ? 500*max(0LL, (C - col_cnt[y][x-1])) : 0));
+            case Dir::R: return max(1LL, init + col[y][x-0] - ((search) ? 500*max(0LL, (C - col_cnt[y][x-0])) : 0));
             default: assert(false);
         }
     }
 
     //// 頂点sから各頂点への経路長を計算
-    void dijkstra(Pos s, vector<vector<ll>>& D){
+    void dijkstra(Pos s, vector<vector<ll>>& D, bool search=false){
         D[s.y][s.x] = 0;
         //// {distance, y, x}
         using T = tuple<ll, int, int>;
@@ -240,8 +262,7 @@ struct Field{
                 int nx = x + dx[dir];
                 if(ny < 0 || nx < 0) continue;
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
-                //ll nd = d + get_dist(y, x, int2dir(dir));
-                ll nd = d + get_dist(y, x, int2dir(dir));
+                ll nd = d + get_dist(y, x, int2dir(dir), search);
 
                 if(nd < D[ny][nx]){
                     D[ny][nx] = nd;
@@ -269,7 +290,7 @@ struct Field{
     }
 
     //// 経路長Dからgoal --> startの経路を復元
-    vector<Dir> restore_path(Pos start, Pos goal, vector<vector<ll>>& D, int q_idx){
+    vector<Dir> restore_path(Pos start, Pos goal, vector<vector<ll>>& D, int q_idx, bool search=false){
         vector<Dir> path;
 
         auto player = Pos(goal);
@@ -290,7 +311,7 @@ struct Field{
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
 
                 //if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
-                if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
+                if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir), search))){
                     player = Pos(ny, nx);
                     path.push_back(int2dir(dir));
                     update = true;
@@ -327,13 +348,32 @@ struct Field{
 
     vector<Dir> get_path(int q_idx, Pos start, Pos goal){
         /// temporary distance
+        //// TODO:
+        //const bool search = true;
+        const bool search = false;
         vector<vector<ll>> D(NUM_GRID, vector<ll>(NUM_GRID, INF));
-        dijkstra(start, D);
-        auto path = restore_path(start, goal, D, q_idx);
+        dijkstra(start, D, search);
+        auto path = restore_path(start, goal, D, q_idx, search);
         return path;
     }
 
-    ll calc_loss(Pos start, ll score, const vector<Dir>& path){
+    ////TODO
+    void edge_cnt_update(Pos start, const vector<Dir>& path){
+        Pos player(start);
+        for(auto& dir : path){
+            auto x = player.x, y = player.y;
+            switch(dir){
+                case Dir::U: row_cnt[x][y-1]++; break;
+                case Dir::D: row_cnt[x][y]++; break;
+                case Dir::L: col_cnt[y][x-1]++; break;
+                case Dir::R: col_cnt[y][x]++; break;
+                default: assert(false);
+            }
+            player.next(dir);
+        }
+    }
+
+    ll calc_loss(Pos start, ll score, const vector<Dir>& path) const {
         //// 現在のパス長を基にしたスコアの推定値
         ll predicted_score = 0;
         Pos player(start);
@@ -583,6 +623,17 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     return check_path(start, goal, path);
 }
 
+double calc_all_loss(const int idx, const Field& field, const Memory& mem){
+    double ret = 0;
+    for(int i = 0; i <= idx; i++){
+        auto [start, _, score, path] = mem.get(i);
+        ll loss = field.calc_loss(start, score, path);
+        ret += abs(loss);
+    }
+    ret /= idx+1;
+    return ret;
+}
+
 int main(){
     Field field(4000);
     
@@ -612,9 +663,14 @@ int main(){
         //}
         
         mem.update(qi, start, goal, score, path);
+        ////field.edge_cnt_update(start, path);
+        //cerr << qi << " : " << field.calc_loss(start, score, path) << " --> ";
         
         field.save_path(start, goal, score, path);
-        field.update_path(qi, {qi}, mem);
+        //field.update_path(qi, {qi}, mem);
+        REP(i,5)
+            field.update_path(qi, {qi}, mem);
+
         //vector<int> indices;
         //for(int i = qi; i >= 0; i-=100){
         //    indices.push_back(i);
@@ -623,6 +679,7 @@ int main(){
         //}
         //field.update_path(qi, indices, mem);
 
+        //cerr << field.calc_loss(start, score, path) << endl;
 
         ////TODO: パラメータ調整
         if(qi >= 10 && qi % 2 == 0){
@@ -673,17 +730,31 @@ int main(){
             //}
             //field.update_path(qi, _indices, mem);
             
-            shuffle(qi_vec.begin(), qi_vec.end(), engine);
-            vector<int> local_indices;
-            for(auto& idx : qi_vec){
-                local_indices.push_back(idx);
-                if(local_indices.size() == BSIZE){
-                    field.update_path(qi, local_indices, mem);
-                    local_indices.clear();
+            //cerr << qi << " : " << field.calc_loss(start, score, path) << " --> ";
+            //cerr << qi << " : " << calc_all_loss(qi, field, mem) << " --> ";
+            //const int len = (qi % 700 == 0) ? 1000 : 1;
+            //const int len = (qi % 20 == 0) ? 100 : 1;
+            const int len = 1;
+            
+            for(int i = 0; i < len; i++){
+                shuffle(qi_vec.begin(), qi_vec.end(), engine);
+                vector<int> local_indices;
+                for(auto& idx : qi_vec){
+                    local_indices.push_back(idx);
+                    if(local_indices.size() == BSIZE){
+                        field.update_path(qi, local_indices, mem);
+                        local_indices.clear();
+                    }
                 }
             }
+
+            //cerr << field.calc_loss(start, score, path) << endl;
+            //cerr << calc_all_loss(qi, field, mem) << endl;
         }
+
     }
+
+    //field.print_edge();
 
     return 0;
 }
