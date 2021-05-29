@@ -4,7 +4,7 @@ OUTPUT = answer
 
 TESTER = tools/target/release/tester
 VIS = tools/target/release/vis
-TEST_IN = tools/in/0025.txt
+TEST_IN = tools/in/0072.txt
 
 ### for test (Q == 10000)
 #TESTER = tools/target10000/release/tester

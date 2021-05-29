@@ -212,12 +212,12 @@ struct Field{
     }
 
     //// (y, x) から dir方向の辺の重みを取得
-    ll& get_dist(int y, int x, Dir dir){
+    ll get_dist(int y, int x, Dir dir){
         switch(dir){
-            case Dir::U: return row[x][y-1];
-            case Dir::D: return row[x][y];
-            case Dir::L: return col[y][x-1];
-            case Dir::R: return col[y][x];
+            case Dir::U: return init + row[x][y-1];
+            case Dir::D: return init + row[x][y];
+            case Dir::L: return init + col[y][x-1];
+            case Dir::R: return init + col[y][x];
             default: assert(false);
         }
     }
@@ -241,7 +241,7 @@ struct Field{
                 if(ny < 0 || nx < 0) continue;
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
                 //ll nd = d + get_dist(y, x, int2dir(dir));
-                ll nd = d + (init + get_dist(y, x, int2dir(dir)));
+                ll nd = d + get_dist(y, x, int2dir(dir));
 
                 if(nd < D[ny][nx]){
                     D[ny][nx] = nd;
@@ -290,7 +290,7 @@ struct Field{
                 if(ny >= NUM_GRID || nx >= NUM_GRID) continue;
 
                 //if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
-                if(D[player.y][player.x] == (D[ny][nx] + (init + get_dist(ny, nx, int2dir(dir))))){
+                if(D[player.y][player.x] == (D[ny][nx] + get_dist(ny, nx, int2dir(dir)))){
                     player = Pos(ny, nx);
                     path.push_back(int2dir(dir));
                     update = true;
@@ -339,14 +339,7 @@ struct Field{
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
-            if(dir == Dir::U)
-                predicted_score += init + row[x][y-1];
-            else if(dir == Dir::D)
-                predicted_score += init + row[x][y];
-            else if(dir == Dir::L)
-                predicted_score += init + col[y][x-1];
-            else if(dir == Dir::R)
-                predicted_score += init + col[y][x];
+            predicted_score += get_dist(y, x, dir);
             player.next(dir);
         }
         //ll loss_score = score - predicted_score;
@@ -355,81 +348,86 @@ struct Field{
         static uniform_real_distribution<> rand((1.0/1.1), (1.0/0.9));
         //cerr << loss_score << " --> " << static_cast<ll>(static_cast<double>(loss_score) * rand(engine)) << endl;
         //loss_score = static_cast<double>(loss_score) * rand(engine);
-        loss_score *= rand(engine);
-        loss_score /= static_cast<ll>(path.size());
         //cerr << loss_score << endl;
+        //TODO:
+        //loss_score *= rand(engine);
+        loss_score /= static_cast<ll>(path.size());
         return loss_score;
     }
 
     //// lossを近傍の頂点へ分配する
     void loss_distribution(int q_idx, Pos start, vector<Dir>& path, ll loss_score, auto& row_loss, auto& col_loss){
-        //// 辺の系数値
+        //// 辺のloss値
         vector<vector<double>> row_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
         vector<vector<double>> col_val(NUM_GRID, vector<double>(NUM_GRID-1, 0));
 
-        //// 畳み込み
-        const double KPA = 30, KPB = 20, KPC = 10;
-        const int BD = 500;
-        const double KER = (q_idx < BD) ? KPA + ((double)(KPB - KPA)/BD) * q_idx :
-                                          KPB + ((double)(KPC - KPB)/(NUM_Q - BD)) * (q_idx - BD); 
-        const double ratio = 1.0;
+        //// 逆畳み込み
+        auto kernel_mirror = [](vector<double>& ker){
+            const int size = ker.size();
+            for(int i = size-2; i >= 0; i--){
+                ker.push_back(ker[i]);
+            }
+        };
+
+        auto kernel_normalization = [](vector<double>& ker){
+            double sum = 0;
+            for(auto& k : ker)
+                sum += k;
+            for(auto& k : ker)
+                k /= sum;
+        };
+
+        auto kernel_apply = [&loss_score](int i, int j, auto& edge_val, auto& kernel){
+            const int ksize = kernel.size();
+            for(int k = 0; k < ksize; k++){
+                const int s = k - (ksize/2);
+                ////TODO : 失われた分
+                if(j+s < 0 || NUM_GRID-1 <= j+s)
+                    continue;
+                edge_val[i][j+s] += loss_score * kernel[k];
+            }
+        };
+
+        //vector<double> kernel = {1, 2, 3};
+        //vector<double> kernel = {1, 2, 3, 4, 5, 6, 7, 8, 9, 9};
+        //vector<double> kernel = {1, 1, 2, 2, 3, 3, 4, 4, 5};
+        //vector<double> kernel = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+        //vector<double> kernel = {1, 2, 4, 8, 16, 32};
+        vector<double> kernel;
+        double val = 1.0;
+        const double ratio = 1.25;
+        const int len = 10;
+        for(int i = 0; i < len; i++){
+            kernel.push_back(val);
+            val *= ratio;
+        }
+        kernel_mirror(kernel);
+        kernel_normalization(kernel);
+        assert(kernel.size() % 2 == 1);
+
         Pos player(start);
         for(auto& dir : path){
             auto x = player.x, y = player.y;
-            //cerr << y << " " << x << endl;
-            if(dir == Dir::U){
-                for(int k = -KER; k <= KER; k++){
-                    if(y-1+k < 0 || NUM_GRID-1 <= y-1+k) continue;
-                    row_val[x][y-1+k] += 1 + ratio * (KER - abs(k));
-                }
-            }
-            else if(dir == Dir::D){
-                for(int k = -KER; k <= KER; k++){
-                    if(y+k < 0 || NUM_GRID-1 <= y+k) continue;
-                    row_val[x][y+k] += 1 + ratio * (KER - abs(k));
-                }
-            }
-            else if(dir == Dir::L){
-                for(int k = -KER; k <= KER; k++){
-                    if(x-1+k < 0 || NUM_GRID-1 <= x-1+k) continue;
-                    col_val[y][x-1+k] += 1 + ratio * (KER - abs(k));
-                }
-            }
-            else if(dir == Dir::R){
-                for(int k = -KER; k <= KER; k++){
-                    if(x+k < 0 || NUM_GRID-1 <= x+k) continue;
-                    col_val[y][x+k] += 1 + ratio * (KER - abs(k));
-                }
-            }
+            if(dir == Dir::U)
+                kernel_apply(x, y-1, row_val, kernel);
+            else if(dir == Dir::D)
+                kernel_apply(x, y, row_val, kernel);
+            else if(dir == Dir::L)
+                kernel_apply(y, x-1, col_val, kernel);
+            else if(dir == Dir::R)
+                kernel_apply(y, x, col_val, kernel);
             player.next(dir);
         }
 
-        vector<double> row_max(NUM_GRID, 0), col_max(NUM_GRID, 0);
-        auto calc_ratio = [](auto& edge_val, auto& edge_max){
+        auto loss_update = [&loss_score](auto& edge_loss, auto& edge_val){
             REP(i, NUM_GRID){
-                ll sum = 0;
-                REP(j, NUM_GRID-1)
-                    sum += edge_val[i][j];
-                if(sum == 0) continue;
                 REP(j, NUM_GRID-1){
-                    edge_val[i][j] /= sum;
-                    chmax(edge_max[i], edge_val[i][j]);
+                    edge_loss[i][j] += edge_val[i][j];
                 }
             }
         };
-        calc_ratio(row_val, row_max);
-        calc_ratio(col_val, col_max);
-
-        auto loss_update = [&loss_score](auto& edge_loss, auto& edge_val, auto& edge_max){
-            REP(i, NUM_GRID){
-                if(edge_max[i] < 0.0001) continue;
-                REP(j, NUM_GRID-1){
-                    edge_loss[i][j] += loss_score * (edge_val[i][j] / edge_max[i]);
-                }
-            }
-        };
-        loss_update(row_loss, row_val, row_max);
-        loss_update(col_loss, col_val, col_max);
+        loss_update(row_loss, row_val);
+        loss_update(col_loss, col_val);
     }
 
     //// ミニバッチ単位で更新
@@ -459,6 +457,9 @@ struct Field{
     }
 
     void update_path(const int epoch, const vector<int>& q_indices, const Memory& mem){
+        if(q_indices.size() == 0)
+            return;
+
         update_path_batch(epoch, q_indices, mem);
     }
 };
@@ -466,15 +467,13 @@ struct Field{
 ////////////////////////////////////////////////////////
 
 //// naive answer
-vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
+vector<Dir> path_naive(Pos player, Pos goal, bool tate=false){
     vector<Dir> path;
 
-    //// 縦横を交互に決定
-    int idx = 0;
     while(player != goal){
         Dir dir;
         //if(idx % 2 == 0){
-        if(zig){
+        if(tate){
             if(player.y < goal.y)
                 dir = Dir::D;
             else if(player.y > goal.y)
@@ -497,8 +496,6 @@ vector<Dir> path_naive(Pos player, Pos goal, bool zig=false){
 
         player.next(dir);
         path.push_back(dir);
-        ////TODO: 直線で探索すべき？
-        //idx = (zig) ? (idx + 1) % 2 : idx;
     }
 
     return path;
@@ -534,7 +531,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     //const double PA = 1.0,  PB = -10.0;
     //const double P = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
     ////cerr << q_idx << " : " << P << endl;
-    //static mt19937 engine = mt19937(1);
+    ///static mt19937 engine = mt19937(1);
     //static uniform_real_distribution<> rand(0, 1);
 
     //if(rand(engine) < P){
@@ -542,7 +539,22 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     //}
     //if(q_idx < 75 && q_idx % 2 == 0){
     //if(q_idx < 75 && true){
-    if(q_idx < 50 && true){
+    if(q_idx == 0 && false){
+        const int my[] = {0, 0, 29, 29};
+        const int mx[] = {0, 29, 0, 29};
+        Pos player = start;
+        for(int i = 0; i < 4; i++){
+            Pos mid(my[i], mx[i]);
+            auto tmp = path_naive(player, mid);
+            for(auto& t : tmp)
+                path.push_back(t);
+            player = mid;
+        }
+        auto tmp = path_naive(player, goal);
+        for(auto& t : tmp)
+            path.push_back(t);
+    }
+    else if(q_idx < 50 && true){
         path = path_naive(start, goal, false);
     }
     else if(q_idx < 50 && false){
@@ -552,19 +564,35 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
         for(auto& t : tmp)
             path.push_back(t);
     }
+    else if(q_idx < 50 && false){
+        //const int my[] = {0, 0, 29, 29};
+        //const int mx[] = {0, 29, 0, 29};
+        //Pos mid(my[q_idx%4], mx[q_idx%4]);
+
+        static mt19937 engine = mt19937(1);
+        static uniform_int_distribution<> rand(0, 29);
+        Pos mid(rand(engine), rand(engine));
+        path = path_naive(start, mid);
+        auto tmp = path_naive(mid, goal);
+        for(auto& t : tmp)
+            path.push_back(t);
+    }
     else
         path = field.get_path(q_idx, start, goal);
-    return path;
-    //return check_path(start, goal, path);
+    //return path;
+    return check_path(start, goal, path);
 }
 
 int main(){
     Field field(4000);
     
-    const int BSIZE = 20;
+    static mt19937 engine = mt19937(10);
+    const int BSIZE = 5;
     Memory mem;
+    vector<int> qi_vec;
     //// {score, idx}
     for(int qi = 0; qi < NUM_Q; qi++){
+        qi_vec.push_back(qi);
         int si, sj, ti, tj;
         cin >> si >> sj >> ti >> tj;
         //cerr << si << " " << sj << " " << ti << " " << tj << endl;
@@ -577,51 +605,66 @@ int main(){
         ll score;
         cin >> score;
         //cerr << score << endl;
+
+        //if(qi == 0){
+        //    int size = path.size();
+        //    field.initialize_field(score / size);
+        //}
         
         mem.update(qi, start, goal, score, path);
         
         field.save_path(start, goal, score, path);
-        //field.update_path(qi, {qi}, mem);
-        vector<int> indices;
-        for(int i = qi; i >= 0; i-=100){
-            indices.push_back(i);
-            if(indices.size() == BSIZE)
-                break;
-        }
-        field.update_path(qi, indices, mem);
+        field.update_path(qi, {qi}, mem);
+        //vector<int> indices;
+        //for(int i = qi; i >= 0; i-=100){
+        //    indices.push_back(i);
+        //    if(indices.size() == BSIZE)
+        //        break;
+        //}
+        //field.update_path(qi, indices, mem);
 
 
         ////TODO: パラメータ調整
-        if(qi >= 10 && qi % 5 == 0){
-            static mt19937 engine = mt19937(10);
-            uniform_int_distribution<> rand(0, qi);
-            for(int i = 0; i < 10; i++){
-                vector<int> indices;
-                for(int b = 0; b < BSIZE; b++)
-                    indices.push_back(rand(engine));
-                field.update_path(qi, indices, mem);
-            }
+        if(qi >= 10 && qi % 2 == 0){
+            //uniform_int_distribution<> rand(0, qi);
+            ////uniform_int_distribution<> rand(max(0, qi-100), qi);
+            //static int tmp_idx = 0;
+            //for(int i = 0; i < 50; i++){
+            //    vector<int> indices;
+            //    //for(int b = 0; b < BSIZE; b++){
+            //    //    //indices.push_back(rand(engine));
+            //    //    indices.push_back(tmp_idx);
+            //    //    tmp_idx = (tmp_idx + 1) % (qi + 1);
+            //    //}
+            //    for(int b = 0; b < BSIZE/2; b++){
+            //        indices.push_back(tmp_idx);
+            //        tmp_idx = (tmp_idx + 1) % (qi + 1);
+            //    }
+            //    for(int b = 0; b < BSIZE/2; b++){
+            //        indices.push_back(rand(engine));
+            //    }
+            //    field.update_path(qi, indices, mem);
+            //}
 
+            //using P = pair<ll, int>;
+            //priority_queue<P> que;
+            //for(int i = 0; i <= qi; i++){
+            //    auto [_start, _goal, _score, _path] = mem.get(i);
+            //    ll loss = field.calc_loss(start, score, path);
+            //    que.push(P(abs(loss), i));
+            //}
 
-            using P = pair<ll, int>;
-            priority_queue<P> que;
-            for(int i = 0; i <= qi; i++){
-                auto [_start, _goal, _score, _path] = mem.get(i);
-                ll loss = field.calc_loss(start, score, path);
-                que.push(P(abs(loss), i));
-            }
-
-            for(int i = 0; i < 10; i++){
-                vector<int> indices;
-                while(!que.empty()){
-                    indices.push_back(que.top().second);
-                    que.pop();
-                    if(indices.size() == BSIZE)
-                        break;
-                }
-                if(que.empty()) break;
-                field.update_path(qi, indices, mem);
-            }
+            //for(int i = 0; i < 50; i++){
+            //    vector<int> indices;
+            //    while(!que.empty()){
+            //        indices.push_back(que.top().second);
+            //        que.pop();
+            //        if(indices.size() == BSIZE)
+            //            break;
+            //    }
+            //    if(que.empty()) break;
+            //    field.update_path(qi, indices, mem);
+            //}
 
             //vector<int> _indices;
             //for(int tqi = qi-10; tqi >= 0; tqi -= 100){
@@ -629,6 +672,16 @@ int main(){
             //    _indices.push_back(tqi);
             //}
             //field.update_path(qi, _indices, mem);
+            
+            shuffle(qi_vec.begin(), qi_vec.end(), engine);
+            vector<int> local_indices;
+            for(auto& idx : qi_vec){
+                local_indices.push_back(idx);
+                if(local_indices.size() == BSIZE){
+                    field.update_path(qi, local_indices, mem);
+                    local_indices.clear();
+                }
+            }
         }
     }
 
