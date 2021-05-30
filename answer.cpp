@@ -212,22 +212,14 @@ struct Field{
         static uniform_real_distribution<> rand(-1.0,1.0);
         REP(i, NUM_GRID){
             REP(j, NUM_GRID-1){
-                //row[i][j] = init;
-                //row[i][j] = init * rand(engine);
-                //row[i][j] = 1000 * rand(engine);
-                row[i][j] = 10 * rand(engine);
-                //row[i][j] = 1000;
-                row_cnt[i][j] = 0;
+                //row[i][j] = 10 * rand(engine);
+                row[i][j] = 1 * rand(engine);
             }
         }
         REP(i, NUM_GRID){
             REP(j, NUM_GRID-1){
-                //col[i][j] = init;
-                //col[i][j] = init * rand(engine);
-                //col[i][j] = 1000 * rand(engine);
-                col[i][j] = 10 * rand(engine);
-                //col[i][j] = 1000;
-                col_cnt[i][j] = 0;
+                //col[i][j] = 10 * rand(engine);
+                col[i][j] = 1 * rand(engine);
             }
         }
     }
@@ -436,8 +428,10 @@ struct Field{
         vector<double> kernel;
         double val = 1.0;
         //const double ratio = 1.25;
-        const double ratio = 1.069179358651739;
-        const int len = 21;
+        //const double ratio = 1.069179358651739;
+        //const int len = 21;
+        const double ratio = 1.0607506200828964;
+        const int len = 26;
         for(int i = 0; i < len; i++){
             kernel.push_back(val);
             val *= ratio;
@@ -569,54 +563,9 @@ vector<Dir> check_path(Pos start, Pos goal, const vector<Dir>& path){
 
 vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
     vector<Dir> path;
-    //const double PA = 1.0,  PB = -10.0;
-    //const double P = PA + ((double)(PB - PA)/NUM_Q) * q_idx;
-    ////cerr << q_idx << " : " << P << endl;
-    ///static mt19937 engine = mt19937(1);
-    //static uniform_real_distribution<> rand(0, 1);
-
-    //if(rand(engine) < P){
-    //    path = path_naive(start, goal, false);
-    //}
-    //if(q_idx < 75 && q_idx % 2 == 0){
-    //if(q_idx < 75 && true){
-    if(q_idx == 0 && false){
-        const int my[] = {0, 0, 29, 29};
-        const int mx[] = {0, 29, 0, 29};
-        Pos player = start;
-        for(int i = 0; i < 4; i++){
-            Pos mid(my[i], mx[i]);
-            auto tmp = path_naive(player, mid);
-            for(auto& t : tmp)
-                path.push_back(t);
-            player = mid;
-        }
-        auto tmp = path_naive(player, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
-    }
-    else if(q_idx < 55 && true){
+    //if(q_idx < 55){
+    if(q_idx < 40){
         path = path_naive(start, goal, false);
-    }
-    else if(q_idx < 50 && false){
-        Pos mid((start.y + goal.y)/2, (start.x + goal.x)/2);
-        path = path_naive(start, mid);
-        auto tmp = path_naive(mid, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
-    }
-    else if(q_idx < 50 && false){
-        //const int my[] = {0, 0, 29, 29};
-        //const int mx[] = {0, 29, 0, 29};
-        //Pos mid(my[q_idx%4], mx[q_idx%4]);
-
-        static mt19937 engine = mt19937(1);
-        static uniform_int_distribution<> rand(0, 29);
-        Pos mid(rand(engine), rand(engine));
-        path = path_naive(start, mid);
-        auto tmp = path_naive(mid, goal);
-        for(auto& t : tmp)
-            path.push_back(t);
     }
     else
         path = field.get_path(q_idx, start, goal);
@@ -636,7 +585,10 @@ double calc_all_loss(const int idx, const Field& field, const Memory& mem){
 }
 
 int main(){
-    Field field(2994);
+    //// 969894859
+    //Field field(2994);
+    //// 971735263
+    Field field(3161);
     
     static mt19937 engine = mt19937(10);
     const int BSIZE = 5;
@@ -684,45 +636,45 @@ int main(){
 
         ////TODO: パラメータ調整
         if(qi >= 10 && qi % 2 == 0){
-            //uniform_int_distribution<> rand(0, qi);
-            ////uniform_int_distribution<> rand(max(0, qi-100), qi);
-            //static int tmp_idx = 0;
-            //for(int i = 0; i < 50; i++){
-            //    vector<int> indices;
-            //    //for(int b = 0; b < BSIZE; b++){
-            //    //    //indices.push_back(rand(engine));
-            //    //    indices.push_back(tmp_idx);
-            //    //    tmp_idx = (tmp_idx + 1) % (qi + 1);
-            //    //}
-            //    for(int b = 0; b < BSIZE/2; b++){
-            //        indices.push_back(tmp_idx);
-            //        tmp_idx = (tmp_idx + 1) % (qi + 1);
-            //    }
-            //    for(int b = 0; b < BSIZE/2; b++){
-            //        indices.push_back(rand(engine));
-            //    }
-            //    field.update_path(qi, indices, mem);
-            //}
+            uniform_int_distribution<> rand(0, qi);
+            //uniform_int_distribution<> rand(max(0, qi-100), qi);
+            static int tmp_idx = 0;
+            for(int i = 0; i < 50; i++){
+                vector<int> indices;
+                //for(int b = 0; b < BSIZE; b++){
+                //    //indices.push_back(rand(engine));
+                //    indices.push_back(tmp_idx);
+                //    tmp_idx = (tmp_idx + 1) % (qi + 1);
+                //}
+                for(int b = 0; b < BSIZE/2; b++){
+                    indices.push_back(tmp_idx);
+                    tmp_idx = (tmp_idx + 1) % (qi + 1);
+                }
+                for(int b = BSIZE/2; b < BSIZE; b++){
+                    indices.push_back(rand(engine));
+                }
+                field.update_path(qi, indices, mem);
+            }
 
-            //using P = pair<ll, int>;
-            //priority_queue<P> que;
-            //for(int i = 0; i <= qi; i++){
-            //    auto [_start, _goal, _score, _path] = mem.get(i);
-            //    ll loss = field.calc_loss(start, score, path);
-            //    que.push(P(abs(loss), i));
-            //}
+            using P = pair<ll, int>;
+            priority_queue<P> que;
+            for(int i = 0; i <= qi; i++){
+                auto [_start, _goal, _score, _path] = mem.get(i);
+                ll loss = field.calc_loss(start, score, path);
+                que.push(P(abs(loss), i));
+            }
 
-            //for(int i = 0; i < 50; i++){
-            //    vector<int> indices;
-            //    while(!que.empty()){
-            //        indices.push_back(que.top().second);
-            //        que.pop();
-            //        if(indices.size() == BSIZE)
-            //            break;
-            //    }
-            //    if(que.empty()) break;
-            //    field.update_path(qi, indices, mem);
-            //}
+            for(int i = 0; i < 50; i++){
+                vector<int> indices;
+                while(!que.empty()){
+                    indices.push_back(que.top().second);
+                    que.pop();
+                    if(indices.size() == BSIZE)
+                        break;
+                }
+                if(que.empty()) break;
+                field.update_path(qi, indices, mem);
+            }
 
             //vector<int> _indices;
             //for(int tqi = qi-10; tqi >= 0; tqi -= 100){
@@ -735,19 +687,16 @@ int main(){
             //cerr << qi << " : " << calc_all_loss(qi, field, mem) << " --> ";
             //const int len = (qi % 700 == 0) ? 1000 : 1;
             //const int len = (qi % 20 == 0) ? 100 : 1;
-            const int len = 1;
             
-            for(int i = 0; i < len; i++){
-                shuffle(qi_vec.begin(), qi_vec.end(), engine);
-                vector<int> local_indices;
-                for(auto& idx : qi_vec){
-                    local_indices.push_back(idx);
-                    if(local_indices.size() == BSIZE){
-                        field.update_path(qi, local_indices, mem);
-                        local_indices.clear();
-                    }
-                }
-            }
+            //shuffle(qi_vec.begin(), qi_vec.end(), engine);
+            //vector<int> local_indices;
+            //for(auto& idx : qi_vec){
+            //    local_indices.push_back(idx);
+            //    if(local_indices.size() == BSIZE){
+            //        field.update_path(qi, local_indices, mem);
+            //        local_indices.clear();
+            //    }
+            //}
 
             //cerr << field.calc_loss(start, score, path) << endl;
             //cerr << calc_all_loss(qi, field, mem) << endl;
