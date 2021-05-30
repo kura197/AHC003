@@ -215,7 +215,7 @@ struct Field{
                 //row[i][j] = init;
                 //row[i][j] = init * rand(engine);
                 //row[i][j] = 1000 * rand(engine);
-                row[i][j] = 100 * rand(engine);
+                row[i][j] = 10 * rand(engine);
                 //row[i][j] = 1000;
                 row_cnt[i][j] = 0;
             }
@@ -225,7 +225,7 @@ struct Field{
                 //col[i][j] = init;
                 //col[i][j] = init * rand(engine);
                 //col[i][j] = 1000 * rand(engine);
-                col[i][j] = 100 * rand(engine);
+                col[i][j] = 10 * rand(engine);
                 //col[i][j] = 1000;
                 col_cnt[i][j] = 0;
             }
@@ -435,8 +435,9 @@ struct Field{
         //vector<double> kernel = {1, 2, 4, 8, 16, 32};
         vector<double> kernel;
         double val = 1.0;
-        const double ratio = 1.25;
-        const int len = 10;
+        //const double ratio = 1.25;
+        const double ratio = 1.069179358651739;
+        const int len = 21;
         for(int i = 0; i < len; i++){
             kernel.push_back(val);
             val *= ratio;
@@ -594,7 +595,7 @@ vector<Dir> answer(int q_idx, Pos start, Pos goal, Field& field){
         for(auto& t : tmp)
             path.push_back(t);
     }
-    else if(q_idx < 50 && true){
+    else if(q_idx < 55 && true){
         path = path_naive(start, goal, false);
     }
     else if(q_idx < 50 && false){
@@ -635,7 +636,7 @@ double calc_all_loss(const int idx, const Field& field, const Memory& mem){
 }
 
 int main(){
-    Field field(4000);
+    Field field(2994);
     
     static mt19937 engine = mt19937(10);
     const int BSIZE = 5;
