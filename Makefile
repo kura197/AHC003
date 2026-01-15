@@ -1,46 +1,73 @@
 
+DEBUG ?= yes
+
+SUBMIT ?= no    ## for AWS lambda
+
 INPUT = answer.cpp
 OUTPUT = answer
 
-TESTER = tools/target/release/tester
+TESTER = ./test.sh
 VIS = tools/target/release/vis
-TEST_IN = tools/in/0072.txt
+TEST_IN = tools/in/0000.txt
 
-### for test (Q == 10000)
-#TESTER = tools/target10000/release/tester
-#VIS = tools/target10000/release/vis
-#TEST_IN = tools/in10000/0025.txt
-
-#TEST_IN = tools/in_e1/0025.txt
-
-TEST_OUT = out.txt
-
-
-TEST_SHELL = ./test.sh
 TEST_PY = ./test.py
 
-CXX = g++-7
-CFLAGS = --std=c++17 -Wall -O3
-#CFLAGS = --std=c++17 -g -fsanitize=address -Wall
-#CFLAGS = --std=c++17 -g -fsanitize=address -Wall -p
+PERF_OUT = profile.json
+
+TMP_OUT = ./out/tmp.txt
+
+AC_LIB = ${HOME}/.atcoder/ac-library
+
+CXX = g++   # compatible to g++-13
+## -fopenmp is removed for AWS lambda
+CXXFLAGS = --std=gnu++23 -Wall -fconcepts -g -Wall -Wextra
+ifeq ($(DEBUG), yes)
+	CXXFLAGS += -O0 -fsanitize=address -fconcepts
+else
+	CXXFLAGS += -O2
+endif
+
+ifeq ($(SUBMIT), yes)
+	CXXFLAGS += -DONLINE_JUDGE
+endif
+
+.PHONY: test_light
+test_light: $(OUTPUT)
+	/usr/bin/time -f "Memory: %M KB" ./$(OUTPUT) < $(TEST_IN) > $(TMP_OUT)
+	./tools/target/release/vis $(TEST_IN) ./out/tmp.txt
 
 .PHONY: test
 test: $(OUTPUT)
-#	$(TEST_SHELL)
-	python $(TEST_PY)
-
-.PHONY: $(TEST_OUT)
-$(TEST_OUT): $(OUTPUT)
-	$(TESTER) $(TEST_IN) ./$(OUTPUT) > $@
+	python3 $(TEST_PY)
 
 .PHONY: svg
-svg: $(OUTPUT) $(TEST_OUT)
-	$(VIS) $(TEST_IN) $(TEST_OUT)
+svg: $(OUTPUT)
+	$(TESTER) $(TEST_IN) ./$(OUTPUT) tmp
 	eog out.svg
 
+.PHONY: perf
+perf: $(OUTPUT)
+	samply record -o $(PERF_OUT) ./$(OUTPUT) < $(TEST_IN) > $(TMP_OUT)
+
+.PHONY: load_perf
+load_perf:
+	samply load $(PERF_OUT)
+
 $(OUTPUT): $(INPUT)
-	$(CXX) $< -o $@ $(CFLAGS)
+	$(CXX) $^ -o $@ $(CXXFLAGS)
+
+.PHONY: prof
+prof: $(OUTPUT) gmon.out
+	gprof $(OUTPUT) gmon.out
+
+.PHONY: analysis
+analysis:
+	streamlit run analysis.py
 
 .PHONY: clean
 clean:
-	rm $(OUTPUT) $(TEST_OUT)
+	rm $(OUTPUT) 
+
+.PHONY: clean_results
+clean_results:
+	git clean -fdx ./out/
