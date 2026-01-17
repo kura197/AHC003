@@ -1,5 +1,5 @@
 
-DEBUG ?= yes
+DEBUG ?= no
 
 SUBMIT ?= no    ## for AWS lambda
 
@@ -33,8 +33,7 @@ endif
 
 .PHONY: test_light
 test_light: $(OUTPUT)
-	/usr/bin/time -f "Memory: %M KB" ./$(OUTPUT) < $(TEST_IN) > $(TMP_OUT)
-	./tools/target/release/vis $(TEST_IN) ./out/tmp.txt
+	./tools/target/release/tester $(TEST_IN) ./$(OUTPUT) > ./out/tmp.txt
 
 .PHONY: test
 test: $(OUTPUT)

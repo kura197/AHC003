@@ -1,4 +1,3 @@
-
 #ifdef ONLINE_JUDGE
 #pragma GCC optimize "Ofast,omit-frame-pointer,inline,unroll-all-loops"
 #define SUBMIT
@@ -23,11 +22,14 @@ typedef unsigned long long ull;
 template<class T>bool chmax(T &a, const T &b) { if (a<b) { a=b; return 1; } return 0; }
 template<class T>bool chmin(T &a, const T &b) { if (b<a) { a=b; return 1; } return 0; }
 constexpr ll MOD = 1e9+7;
-constexpr ll INF = 1e14;
+constexpr ll INF_LL = 1e14; // 変数名重複回避のため変更
 
 constexpr int SEED = 1000;
 
 static mt19937 engine;
+
+constexpr int N = 30;
+constexpr int K = 1000;
 
 namespace Env {
     constexpr double time_limit = 1.950;
@@ -67,6 +69,8 @@ using time_point_t = std::chrono::_V2::system_clock::time_point;
 // R, D, L, U
 constexpr int dx[] = {1, 0, -1, 0};
 constexpr int dy[] = {0, 1, 0, -1};
+
+constexpr char dirs[] = {'R', 'D', 'L', 'U'};
 
 ////////////////////////////////////////////////////////////////////
 
@@ -122,7 +126,7 @@ struct Timer {
 
 Timer timer;
 
-////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
 
 template <std::floating_point T>
 double get_linear_interpolate(T progress, double start_val, double end_val) {
@@ -144,45 +148,234 @@ void build_di(int width) {
 
 ///////////////////////////////////////////////////////////////////
 
-// TODO
-namespace input {
-    void read_input() {
+constexpr int M = N * (N - 1);  // num of edges of a direction
+using edge_t = bitset<2 * M>;
+
+// 各辺の推定値を格納する配列（グローバル）
+// インデックス 0 ~ M-1: 横方向の辺 (y, x) -> (y, x+1) のID = y*(N-1) + x
+// インデックス M ~ 2M-1: 縦方向の辺 (y, x) -> (y+1, x) のID = M + x*(N-1) + y
+array<double, 2*M> estimated_weights;
+
+array<double, 2*N> hv;
+array<array<double, 2*N>, 2*N> hv_var;
+
+int enc(int y, int x) {
+    return y*N + x;
+}
+
+pair<int, int> dec(int v) {
+    return {v / N, v % N};
+}
+
+struct Query {
+    Query() {
+    }
+
+    pair<int, int> get_query() {
+        int si, sj, ti, tj;
+        cin >> si >> sj >> ti >> tj;
+        return {enc(si, sj), enc(ti, tj)};
+    }
+
+    int put_path(const vector<int>& path) {
+        for (const auto& d : path) {
+            cout << dirs[d];
+        }
+        cout << endl;
+
+        int len;
+        cin >> len;
+        return len;
     }
 };
 
 ////////////////////////////////////////////////////////////////////
 
-// TODO
-struct Answer {
-    Answer() {
+// Dijkstra法を用いて最短パスを求める
+pair<vector<int>, edge_t> get_path(int src, int dst) {
+    // Dijkstraの準備
+    vector<double> dist(N * N, 1e18);
+    vector<int> prev_node(N * N, -1);
+    vector<int> prev_dir(N * N, -1);
+    
+    // {cost, u}
+    priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> pq;
+
+    dist[src] = 0;
+    pq.push({0, src});
+
+    while (!pq.empty()) {
+        auto [d, u] = pq.top();
+        pq.pop();
+
+        if (d > dist[u]) continue;
+        if (u == dst) break; // ゴールに到達
+
+        auto [y, x] = dec(u);
+
+        // 4方向へ探索 (R, D, L, U)
+        REP(dir, 4) {
+            int ny = y + dy[dir];
+            int nx = x + dx[dir];
+
+            if (ny < 0 || ny >= N || nx < 0 || nx >= N) continue;
+
+            int v = enc(ny, nx);
+            
+            // 辺のインデックスを計算してコストを取得
+            int edge_idx = -1;
+            if (dir == 0) { // R: (y,x) -> (y,x+1)
+                edge_idx = y * (N - 1) + x;
+            } else if (dir == 1) { // D: (y,x) -> (y+1,x)
+                edge_idx = M + x * (N - 1) + y;
+            } else if (dir == 2) { // L: (y,x-1) -> (y,x)
+                edge_idx = y * (N - 1) + (x - 1);
+            } else if (dir == 3) { // U: (y-1,x) -> (y,x)
+                edge_idx = M + x * (N - 1) + (y - 1);
+            }
+
+            //double weight = estimated_weights[edge_idx];
+            double weight = hv[edge_idx / (N - 1)];
+            //DEBUG("edge_idx = {}, weight = {}\n", edge_idx, weight);
+            
+            if (dist[v] > dist[u] + weight) {
+                dist[v] = dist[u] + weight;
+                prev_node[v] = u;
+                prev_dir[v] = dir;
+                pq.push({dist[v], v});
+            }
+        }
     }
 
-    void print_answer() {
+    // パスの復元
+    vector<int> path;
+    edge_t edges;
+    
+    int curr = dst;
+    while (curr != src) {
+        int dir = prev_dir[curr];
+        int prev = prev_node[curr];
+        
+        path.push_back(dir);
+        
+        // 通った辺をbitsetに記録
+        auto [py, px] = dec(prev);
+        int edge_idx = -1;
+        // logic from previous implementation to maintain consistency
+        if (dir == 0) { // R
+             edge_idx = py * (N - 1) + px;
+        } else if (dir == 1) { // D
+             edge_idx = M + px * (N - 1) + py;
+        } else if (dir == 2) { // L
+             edge_idx = py * (N - 1) + (px - 1);
+        } else if (dir == 3) { // U
+             edge_idx = M + px * (N - 1) + (py - 1);
+        }
+
+        if(edge_idx != -1) edges.set(edge_idx);
+
+        curr = prev;
     }
-};
+    
+    reverse(ALL(path));
+    return {path, edges};
+}
 
-////////////////////////////////////////////////////////////////////
+template<typename T, typename U>
+int inner_product(T a, U b) {
+    const int size = a.size();
+    int ret = 0;
+    REP(i, size) {
+        ret += a[i] * b[i];
+    }
+    return ret;
+}
 
-Answer solve(const double end_time) {
-    Answer ans;
-    return ans;
+void update_estimate(int len, edge_t edges) {
+    array<int, 2*N> simple_edges;
+    for (auto& e : simple_edges) e = 0;
+    REP(m, 2*M) {
+        if (edges[m]) simple_edges[m / (N-1)] += 1;
+    }
+
+    // e = len - (c*x)
+    //DEBUG("simple_edges = {}\n", simple_edges);
+    //DEBUG("hv = {}\n", hv);
+    const auto est_y = inner_product(simple_edges, hv);
+    const auto err = len - est_y;
+    DEBUG("len = {}, est_y = {}, err = {}\n", len, est_y, err);
+
+    // S = cPc + R
+    const double R = pow(0.2 * len, 2) / 12;
+    double S = R;
+    array<double, 2*N> cP;
+    REP(j, 2*N) {
+        cP[j] = 0;
+        REP(i, 2*N) {
+            cP[j] += simple_edges[i] * hv_var[i][j];
+        }
+        S += cP[j] * simple_edges[j];
+    }
+    //DEBUG("S = {}\n", S);
+
+    // k = Pc / S
+    array<double, 2*N> k;
+    REP(i, 2*N) {
+        double tmp = 0;
+        REP(j, 2*N) tmp += hv_var[i][j] * simple_edges[j];
+        k[i] = tmp / S;
+    }
+    //DEBUG("k = {}\n", k);
+
+    // x_new = x + k*e
+    REP(i, 2*N) {
+        hv[i] = hv[i] + k[i] * err;
+    }
+    //DEBUG("x_new = {}\n", hv);
+
+    // P_new = P - k*(cP)
+    REP(i, 2*N) {
+        REP(j, 2*N) {
+            hv_var[i][j] -= k[i] * cP[j];
+        }
+    }
+
+    //DEBUG("hv_var = [");
+    //REP(i, 2*N) {
+    //    DEBUG("{}, ", hv_var[i][i]);
+    //}
+    //DEBUG("]\n");
+}
+
+void solve(const double end_time) {
+    const int D = (100 + 2000) / 2;
+    //for (auto& w : estimated_weights) w = 5000.0;
+    for (auto& v : hv) v = 5000.0;
+    REP(i, 2*N) {
+        REP(j, 2*N) {
+            hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
+        }
+    }
+
+    Query query;
+    REP(k, K) {
+        DEBUG("k = {}\n", k);
+        const auto [s, t] = query.get_query();
+        const auto [path, edges] = get_path(s, t);
+        const auto len = query.put_path(path);
+        update_estimate(len, edges);
+    }
+
+    DEBUG("estimated hv : {}\n", hv);
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]){
     ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    //engine = mt19937(SEED);
-
-    //read_args(argc, argv);
-
-    input::read_input();
-    //build_di(input::N);
-    Answer answer = solve(Env::time_limit);
-    answer.print_answer();
+    solve(Env::time_limit);
 
     const double time = timer.get_time();
     DEBUG("time: {:.3f} [s]\n", time);
-    //assert(time < 2.0);
     return 0;
 }
