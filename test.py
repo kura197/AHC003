@@ -17,7 +17,7 @@ from cloud_test import upload_solver, run_lambda_test, download_result
 #TEST = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
 #TEST = [0, 30, 40, 50, 55, 65, 70, 75]
 #TEST = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]
-TEST = range(0, 100)
+TEST = range(0, 10)
 
 EPS = 0.00001
 
@@ -61,9 +61,8 @@ def run_test(queue, input_file, tmp_file, test_num, params, config: RunConfig):
     str_params = [str(x) for x in params]
 
     if config.tester is not None:  ## interactive
-        with open(input_file, 'r') as ifp:
-            with open(tmp_file, 'w') as ofp:
-                proc = subprocess.run([config.tester, config.solver, *str_params], encoding='utf-8', stdin=ifp, stderr=subprocess.PIPE, stdout=ofp)
+        with open(tmp_file, 'w') as ofp:
+            proc = subprocess.run([config.tester, input_file, config.solver, *str_params], encoding='utf-8', stderr=subprocess.PIPE, stdout=ofp)
         if proc.returncode != 0:
             print(f'{config.tester} {config.solver} failed.', file=sys.stderr)
             print(proc.stderr)
@@ -367,16 +366,16 @@ def main(args):
 
 def get_argparser():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--tester', type=str, default=None, help='tester path')
-    parser.add_argument('--vis', type=str, default='./tools/target/release/vis', help='vis path')
+    parser.add_argument('--tester', type=str, default='./tools/target/release/tester', help='tester path')
+    parser.add_argument('--vis', type=str, default=None, help='vis path')
     parser.add_argument('--tests', type=str, default='./tools/in', help='input test case path')
     parser.add_argument('--solver', type=str, default='./answer', help='solver bin path')
     parser.add_argument('--max_process', type=int, default=4, help='max number of process')
     parser.add_argument('--n_judge_testcase', type=int, default=150, help='number of testcase in judge system')
     parser.add_argument('--cloud', action='store_true', help='run tests at cloud server')
     parser.add_argument('--save', type=str, default=None, help='directory name to save results under ./out/')
-    parser.add_argument('--compare', type=str, default='last_trial', help='directory name under ./out/ to use as a baseline for comparison')
-    parser.add_argument('--show-comparison', type=str, nargs='*', default=[], help='List of additional past trials to show in the final comparison table.')
+    parser.add_argument('--compare', type=str, default='solve01', help='directory name under ./out/ to use as a baseline for comparison')
+    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve01'], help='List of additional past trials to show in the final comparison table.')
     return parser
 
 if __name__ == '__main__':
