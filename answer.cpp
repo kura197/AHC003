@@ -156,9 +156,6 @@ using edge_t = bitset<2 * M>;
 // インデックス M ~ 2M-1: 縦方向の辺 (y, x) -> (y+1, x) のID = M + x*(N-1) + y
 array<double, 2*M> estimated_weights;
 
-array<double, 2*N> hv;
-array<array<double, 2*N>, 2*N> hv_var;
-
 int enc(int y, int x) {
     return y*N + x;
 }
@@ -191,8 +188,94 @@ struct Query {
 
 ////////////////////////////////////////////////////////////////////
 
+template<typename T, typename U>
+int inner_product(T a, U b) {
+    const int size = a.size();
+    int ret = 0;
+    REP(i, size) {
+        ret += a[i] * b[i];
+    }
+    return ret;
+}
+
+struct Model {
+    int D;
+    array<double, 2*N> hv;
+    array<array<double, 2*N>, 2*N> hv_var;
+    double log_likelihood;
+
+    Model(int D) : D(D), log_likelihood(0.0) {
+        for (auto& v : hv) v = 5000.0;
+        REP(i, 2*N) {
+            REP(j, 2*N) {
+                hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
+            }
+        }
+    }
+
+    void update_estimate(int len, edge_t edges) {
+        array<int, 2*N> simple_edges;
+        for (auto& e : simple_edges) e = 0;
+        REP(m, 2*M) {
+            if (edges[m]) simple_edges[m / (N-1)] += 1;
+        }
+
+        // e = len - (c*x)
+        //DEBUG("simple_edges = {}\n", simple_edges);
+        //DEBUG("hv = {}\n", hv);
+        const auto est_y = inner_product(simple_edges, hv);
+        const auto err = len - est_y;
+        DEBUG("len = {}, est_y = {}, err = {}\n", len, est_y, err);
+
+        // S = cPc + R
+        const double R = pow(0.2 * len, 2) / 12;
+        double S = R;
+        array<double, 2*N> cP;
+        REP(j, 2*N) {
+            cP[j] = 0;
+            REP(i, 2*N) {
+                cP[j] += simple_edges[i] * hv_var[i][j];
+            }
+            S += cP[j] * simple_edges[j];
+        }
+        //DEBUG("S = {}\n", S);
+
+        // k = Pc / S
+        array<double, 2*N> k;
+        REP(i, 2*N) {
+            double tmp = 0;
+            REP(j, 2*N) tmp += hv_var[i][j] * simple_edges[j];
+            k[i] = tmp / S;
+        }
+        //DEBUG("k = {}\n", k);
+
+        // x_new = x + k*e
+        REP(i, 2*N) {
+            //hv[i] = hv[i] + k[i] * err;
+            hv[i] = max(0.0, hv[i] + k[i] * err);
+        }
+        //DEBUG("x_new = {}\n", hv);
+
+        // P_new = P - k*(cP)
+        REP(i, 2*N) {
+            REP(j, 2*N) {
+                hv_var[i][j] -= k[i] * cP[j];
+            }
+        }
+
+        //DEBUG("hv_var = [");
+        //REP(i, 2*N) {
+        //    DEBUG("{}, ", hv_var[i][i]);
+        //}
+        //DEBUG("]\n");
+
+        log_likelihood -= (log(S) + err * err / S) / 2;
+    }
+};
+
+
 // Dijkstra法を用いて最短パスを求める
-pair<vector<int>, edge_t> get_path(int src, int dst) {
+pair<vector<int>, edge_t> get_path(int src, int dst, const Model& model) {
     // Dijkstraの準備
     vector<double> dist(N * N, 1e18);
     vector<int> prev_node(N * N, -1);
@@ -235,7 +318,7 @@ pair<vector<int>, edge_t> get_path(int src, int dst) {
             }
 
             //double weight = estimated_weights[edge_idx];
-            double weight = hv[edge_idx / (N - 1)];
+            double weight = model.hv[edge_idx / (N - 1)];
             //DEBUG("edge_idx = {}, weight = {}\n", edge_idx, weight);
             
             if (dist[v] > dist[u] + weight) {
@@ -281,92 +364,36 @@ pair<vector<int>, edge_t> get_path(int src, int dst) {
     return {path, edges};
 }
 
-template<typename T, typename U>
-int inner_product(T a, U b) {
-    const int size = a.size();
-    int ret = 0;
-    REP(i, size) {
-        ret += a[i] * b[i];
-    }
-    return ret;
-}
-
-void update_estimate(int len, edge_t edges) {
-    array<int, 2*N> simple_edges;
-    for (auto& e : simple_edges) e = 0;
-    REP(m, 2*M) {
-        if (edges[m]) simple_edges[m / (N-1)] += 1;
-    }
-
-    // e = len - (c*x)
-    //DEBUG("simple_edges = {}\n", simple_edges);
-    //DEBUG("hv = {}\n", hv);
-    const auto est_y = inner_product(simple_edges, hv);
-    const auto err = len - est_y;
-    DEBUG("len = {}, est_y = {}, err = {}\n", len, est_y, err);
-
-    // S = cPc + R
-    const double R = pow(0.2 * len, 2) / 12;
-    double S = R;
-    array<double, 2*N> cP;
-    REP(j, 2*N) {
-        cP[j] = 0;
-        REP(i, 2*N) {
-            cP[j] += simple_edges[i] * hv_var[i][j];
-        }
-        S += cP[j] * simple_edges[j];
-    }
-    //DEBUG("S = {}\n", S);
-
-    // k = Pc / S
-    array<double, 2*N> k;
-    REP(i, 2*N) {
-        double tmp = 0;
-        REP(j, 2*N) tmp += hv_var[i][j] * simple_edges[j];
-        k[i] = tmp / S;
-    }
-    //DEBUG("k = {}\n", k);
-
-    // x_new = x + k*e
-    REP(i, 2*N) {
-        hv[i] = hv[i] + k[i] * err;
-    }
-    //DEBUG("x_new = {}\n", hv);
-
-    // P_new = P - k*(cP)
-    REP(i, 2*N) {
-        REP(j, 2*N) {
-            hv_var[i][j] -= k[i] * cP[j];
-        }
-    }
-
-    //DEBUG("hv_var = [");
-    //REP(i, 2*N) {
-    //    DEBUG("{}, ", hv_var[i][i]);
-    //}
-    //DEBUG("]\n");
-}
-
 void solve(const double end_time) {
-    const int D = (100 + 2000) / 2;
-    //for (auto& w : estimated_weights) w = 5000.0;
-    for (auto& v : hv) v = 5000.0;
-    REP(i, 2*N) {
-        REP(j, 2*N) {
-            hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
-        }
-    }
+    vector<Model> models;
+    models.emplace_back((100 + 2000) * 1 / 5);
+    models.emplace_back((100 + 2000) * 2 / 5);
+    models.emplace_back((100 + 2000) / 2);
+    models.emplace_back((100 + 2000) * 3 / 5);
+    models.emplace_back((100 + 2000) * 4 / 5);
 
     Query query;
     REP(k, K) {
-        DEBUG("k = {}\n", k);
+        vector<double> likelihoods;
+        for (const auto& model : models) {
+            likelihoods.push_back(model.log_likelihood);
+        }
+        DEBUG("k = {}, likelihoods = {}\n", k, likelihoods);
         const auto [s, t] = query.get_query();
-        const auto [path, edges] = get_path(s, t);
+        const auto& model = *max_element(ALL(models), [](const Model& a, const Model& b) {
+            return a.log_likelihood < b.log_likelihood;
+        });
+        const auto [path, edges] = get_path(s, t, model);
         const auto len = query.put_path(path);
-        update_estimate(len, edges);
+        for (auto& model : models) {
+            model.update_estimate(len, edges);
+        }
     }
 
-    DEBUG("estimated hv : {}\n", hv);
+    const auto& best_model = *max_element(ALL(models), [](const Model& a, const Model& b) {
+        return a.log_likelihood < b.log_likelihood;
+    });
+    DEBUG("D = {}, likelihood = {}, estimated hv : {}\n", best_model.D, best_model.log_likelihood, best_model.hv);
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]){

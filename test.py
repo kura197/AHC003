@@ -371,11 +371,11 @@ def get_argparser():
     parser.add_argument('--tests', type=str, default='./tools/in', help='input test case path')
     parser.add_argument('--solver', type=str, default='./answer', help='solver bin path')
     parser.add_argument('--max_process', type=int, default=4, help='max number of process')
-    parser.add_argument('--n_judge_testcase', type=int, default=150, help='number of testcase in judge system')
+    parser.add_argument('--n_judge_testcase', type=int, default=100, help='number of testcase in judge system')
     parser.add_argument('--cloud', action='store_true', help='run tests at cloud server')
     parser.add_argument('--save', type=str, default=None, help='directory name to save results under ./out/')
-    parser.add_argument('--compare', type=str, default='solve01', help='directory name under ./out/ to use as a baseline for comparison')
-    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve01', 'old_solver'], help='List of additional past trials to show in the final comparison table.')
+    parser.add_argument('--compare', type=str, default='solve03', help='directory name under ./out/ to use as a baseline for comparison')
+    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve03', 'old_solver'], help='List of additional past trials to show in the final comparison table.')
     return parser
 
 if __name__ == '__main__':
