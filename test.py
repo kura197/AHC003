@@ -17,7 +17,7 @@ from cloud_test import upload_solver, run_lambda_test, download_result
 #TEST = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
 #TEST = [0, 30, 40, 50, 55, 65, 70, 75]
 #TEST = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]
-TEST = range(0, 10)
+TEST = range(0, 20)
 
 EPS = 0.00001
 
@@ -375,7 +375,7 @@ def get_argparser():
     parser.add_argument('--cloud', action='store_true', help='run tests at cloud server')
     parser.add_argument('--save', type=str, default=None, help='directory name to save results under ./out/')
     parser.add_argument('--compare', type=str, default='solve01', help='directory name under ./out/ to use as a baseline for comparison')
-    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve01'], help='List of additional past trials to show in the final comparison table.')
+    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve01', 'old_solver'], help='List of additional past trials to show in the final comparison table.')
     return parser
 
 if __name__ == '__main__':
