@@ -374,8 +374,8 @@ def get_argparser():
     parser.add_argument('--n_judge_testcase', type=int, default=100, help='number of testcase in judge system')
     parser.add_argument('--cloud', action='store_true', help='run tests at cloud server')
     parser.add_argument('--save', type=str, default=None, help='directory name to save results under ./out/')
-    parser.add_argument('--compare', type=str, default='solve03', help='directory name under ./out/ to use as a baseline for comparison')
-    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve03', 'old_solver'], help='List of additional past trials to show in the final comparison table.')
+    parser.add_argument('--compare', type=str, default='solve04', help='directory name under ./out/ to use as a baseline for comparison')
+    parser.add_argument('--show-comparison', type=str, nargs='*', default=['solve04', 'old_solver'], help='List of additional past trials to show in the final comparison table.')
     return parser
 
 if __name__ == '__main__':

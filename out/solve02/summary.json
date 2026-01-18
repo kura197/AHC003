@@ -1,0 +1,157 @@
+{
+  "absolute_scores": {
+    "total": 18787318375,
+    "average": 939365918.75,
+    "estimated_total": 140904887812.5
+  },
+  "relative_scores": {
+    "average_log_ratio": 30191.28624427199,
+    "improved_cases": 10,
+    "decreased_cases": 0
+  },
+  "parameter_analysis": {},
+  "individual_test_scores": [
+    {
+      "test_case": 0,
+      "score": 982446078,
+      "base_score": 982446078,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 1,
+      "score": 916366375,
+      "base_score": 916366375,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 2,
+      "score": 986067151,
+      "base_score": 986067151,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 3,
+      "score": 932699540,
+      "base_score": 932699540,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 4,
+      "score": 952345200,
+      "base_score": 952345200,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 5,
+      "score": 944352323,
+      "base_score": 944352323,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 6,
+      "score": 852152268,
+      "base_score": 852152268,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 7,
+      "score": 993082048,
+      "base_score": 993082048,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 8,
+      "score": 982605745,
+      "base_score": 982605745,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 9,
+      "score": 988376724,
+      "base_score": 988376724,
+      "relative_score_percent": 100.0,
+      "params": {}
+    },
+    {
+      "test_case": 10,
+      "score": 917060846,
+      "base_score": 1,
+      "relative_score_percent": 91706084600.0,
+      "params": {}
+    },
+    {
+      "test_case": 11,
+      "score": 932279639,
+      "base_score": 1,
+      "relative_score_percent": 93227963900.0,
+      "params": {}
+    },
+    {
+      "test_case": 12,
+      "score": 888128313,
+      "base_score": 1,
+      "relative_score_percent": 88812831300.0,
+      "params": {}
+    },
+    {
+      "test_case": 13,
+      "score": 974347401,
+      "base_score": 1,
+      "relative_score_percent": 97434740100.0,
+      "params": {}
+    },
+    {
+      "test_case": 14,
+      "score": 899204041,
+      "base_score": 1,
+      "relative_score_percent": 89920404100.0,
+      "params": {}
+    },
+    {
+      "test_case": 15,
+      "score": 936253668,
+      "base_score": 1,
+      "relative_score_percent": 93625366800.0,
+      "params": {}
+    },
+    {
+      "test_case": 16,
+      "score": 920428276,
+      "base_score": 1,
+      "relative_score_percent": 92042827600.0,
+      "params": {}
+    },
+    {
+      "test_case": 17,
+      "score": 987940529,
+      "base_score": 1,
+      "relative_score_percent": 98794052900.0,
+      "params": {}
+    },
+    {
+      "test_case": 18,
+      "score": 866816220,
+      "base_score": 1,
+      "relative_score_percent": 86681622000.0,
+      "params": {}
+    },
+    {
+      "test_case": 19,
+      "score": 934365990,
+      "base_score": 1,
+      "relative_score_percent": 93436599000.0,
+      "params": {}
+    }
+  ],
+  "host": "local",
+  "timestamp": "2026-01-18T11:38:10.535384"
+}
