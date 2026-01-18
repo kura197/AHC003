@@ -454,9 +454,12 @@ void solve(const double end_time) {
     // --- Model Definition ---
     
     // 1. Grid Models (解像度バリエーション)
-    //models.push_back(make_unique<Model<1>>(1000)); // 60vars
-    //models.push_back(make_unique<Model<2>>(1000)); // 120vars
-    //models.push_back(make_unique<Model<4>>(1000)); // 240vars
+    models.push_back(make_unique<Model<1>>(600)); // 60vars
+    models.push_back(make_unique<Model<1>>(1200)); // 60vars
+    models.push_back(make_unique<Model<2>>(600)); // 120vars
+    models.push_back(make_unique<Model<2>>(1200)); // 120vars
+    models.push_back(make_unique<Model<4>>(600)); // 240vars
+    models.push_back(make_unique<Model<4>>(1200)); // 240vars
     
     // 2. Edge Models (1740vars, M1/M2 Structure)
     // ノイズの大きさ D を変えてバリエーションを持たせる
