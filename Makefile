@@ -8,7 +8,7 @@ OUTPUT = answer
 
 TESTER = ./test.sh
 VIS = tools/target/release/vis
-TEST_IN = tools/in/0000.txt
+TEST = tools/in/0000.txt
 
 TEST_PY = ./test.py
 
@@ -33,7 +33,7 @@ endif
 
 .PHONY: test_light
 test_light: $(OUTPUT)
-	./tools/target/release/tester $(TEST_IN) ./$(OUTPUT) > ./out/tmp.txt
+	./tools/target/release/tester $(TEST) ./$(OUTPUT) > ./out/tmp.txt
 
 .PHONY: test
 test: $(OUTPUT)
@@ -41,12 +41,12 @@ test: $(OUTPUT)
 
 .PHONY: svg
 svg: $(OUTPUT)
-	$(TESTER) $(TEST_IN) ./$(OUTPUT) tmp
+	$(TESTER) $(TEST) ./$(OUTPUT) tmp
 	eog out.svg
 
 .PHONY: perf
 perf: $(OUTPUT)
-	samply record -o $(PERF_OUT) ./$(OUTPUT) < $(TEST_IN) > $(TMP_OUT)
+	samply record -o $(PERF_OUT) ./$(OUTPUT) < $(TEST) > $(TMP_OUT)
 
 .PHONY: load_perf
 load_perf:
