@@ -6,6 +6,7 @@
 #endif
 
 #include <bits/stdc++.h>
+#include <format>
 
 using namespace std;
 using namespace chrono;
@@ -35,15 +36,13 @@ namespace Env {
     constexpr double time_limit = 1.950;
 };
 
+// ==========================================
+// Debug Utils
+// ==========================================
 #ifdef SUBMIT
 #define DEBUG(fmt, ...) ;
-#define DUMP(fmt, ...) ;
-#define ASSERT(expr, fmt_str, ...) ;
 #else
-#define DEBUG(fmt, ...) std::cerr << std::format(fmt __VA_OPT__(,) __VA_ARGS__)
-#define DUMP(var) std::cerr << #var << " = " << (var) << std::endl;
-#define ASSERT(expr, fmt_str, ...) 
-#include "dbg_utils.h"
+#define DEBUG(fmt_str, ...) std::cerr << std::format(fmt_str __VA_OPT__(,) __VA_ARGS__)
 #endif 
 
 using time_point_t = std::chrono::_V2::system_clock::time_point;
@@ -60,7 +59,9 @@ struct Timer { std::chrono::_V2::system_clock::time_point sp; Timer():sp(system_
 Timer timer;
 
 constexpr int M = N * (N - 1); 
-using edge_t = bitset<2 * M>;
+constexpr int TOTAL_EDGES = 2 * M; // 1740
+
+using edge_t = bitset<TOTAL_EDGES>;
 
 int enc(int y, int x) { return y*N + x; }
 pair<int, int> dec(int v) { return {v / N, v % N}; }
@@ -85,12 +86,19 @@ int inner_product(T a, U b) {
     return ret;
 }
 
+// 構造の仮定
+enum class Structure {
+    M1, // 全結合的相関 (行・列内で一様)
+    M2  // 距離減衰相関 (行・列内で分離あり)
+};
+
 // 基底クラス
 struct BaseModel {
     double log_likelihood;
-    int n_vars; // 識別用(デバッグ等)
+    Structure type; // デバッグ用
+    int D;          // デバッグ用
     
-    BaseModel(int n) : log_likelihood(0.0), n_vars(n) {}
+    BaseModel(Structure t, int d) : log_likelihood(0.0), type(t), D(d) {}
     virtual ~BaseModel() = default;
 
     virtual void update_estimate(int len, edge_t edges) = 0;
@@ -98,122 +106,178 @@ struct BaseModel {
     virtual double get_variance(int dir, int y, int x) const = 0;
 };
 
-// テンプレートモデルクラス
-// DIV=1 -> 60変数, DIV=2 -> 120変数, DIV=4 -> 240変数
-template <int DIV>
-struct Model : public BaseModel {
-    static constexpr int N_VARS_LOCAL = 2 * N * DIV;
+// ==========================================================
+// 1740変数モデル (Block Diagonal Covariance)
+// 構造(M1/M2)の違いは初期共分散行列に埋め込む
+// ==========================================================
+struct ModelEdge : public BaseModel {
+    static constexpr int B_SIZE = N - 1; // 29
+    static constexpr int N_BLOCKS = 2 * N; // 60 blocks (30 rows + 30 cols)
     
-    int D;
-    array<double, N_VARS_LOCAL> hv;
-    array<array<double, N_VARS_LOCAL>, N_VARS_LOCAL> hv_var;
+    array<double, TOTAL_EDGES> hv;
+    
+    // 共分散行列をブロック対角化して保持
+    vector<array<double, B_SIZE * B_SIZE>> blocks; 
 
-    Model(int D) : BaseModel(N_VARS_LOCAL), D(D) {
+    ModelEdge(Structure type, int D) : BaseModel(type, D) {
         hv.fill(5000.0);
-        // 初期分散
-        REP(i, N_VARS_LOCAL) {
-            REP(j, N_VARS_LOCAL) {
-                hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
+        blocks.resize(N_BLOCKS);
+        
+        // パラメータ設定
+        // base_var: H_i (行・列全体のベース) の分散
+        // noise_var: delta_ij (個別の辺) の分散
+        double base_var = pow(6000, 2) / 12.0;  // 幅6000程度と仮定
+        
+        // Dによってノイズの大きさを変える
+        // Dが大きい = 個別性が強い = noise_varが大きい
+        // Dが小さい = 全体性が強い = noise_varが小さい
+        // ここでは簡易的に D=200~2000 の範囲で設定
+        double noise_width = 2.0 * D; 
+        double noise_var = pow(noise_width, 2) / 12.0;
+
+        // 全ブロック共通の初期化
+        REP(b, N_BLOCKS) {
+            REP(i, B_SIZE) {
+                REP(j, B_SIZE) {
+                    int idx = i * B_SIZE + j;
+                    if (i == j) {
+                        // 対角成分: ベース分散 + 個別ノイズ分散
+                        blocks[b][idx] = base_var + noise_var;
+                    } else {
+                        // 非対角成分: 構造仮定による共分散
+                        if (type == Structure::M1) {
+                            // M=1: どこでも強い相関 (距離によらない)
+                            // 完全に1.0にすると特異になるので 0.95 程度にしておく
+                            blocks[b][idx] = base_var * 0.95; 
+                        } else {
+                            // M=2: 距離に応じた線形減衰
+                            double dist = abs(i - j);
+                            double correlation = max(0.0, 1.0 - (dist / 28.0));
+                            blocks[b][idx] = base_var * correlation;
+                        }
+                    }
+                }
             }
         }
     }
 
-    // 座標から変数インデックスを計算
-    int get_var_idx(int dir, int y, int x) const {
-        // セグメント計算: (x * DIV) / N をクリップ
-        if (dir == 0 || dir == 2) { // 横 (Row) 0 ~ N*DIV-1
-            // Row ID: y * DIV + seg
-            int seg = (x * DIV) / N;
-            if (seg >= DIV) seg = DIV - 1;
-            return y * DIV + seg;
-        } else { // 縦 (Col) N*DIV ~ 2*N*DIV-1
-            // Col ID: x * DIV + seg (+ offset)
-            int seg = (y * DIV) / N;
-            if (seg >= DIV) seg = DIV - 1;
-            return N * DIV + x * DIV + seg;
+    // 辺ID (0~1739) -> (BlockID, LocalID)
+    pair<int, int> get_block_info(int edge_idx) const {
+        if (edge_idx < M) { // 横辺
+            int row = edge_idx / (N - 1);
+            int col = edge_idx % (N - 1);
+            return {row, col};
+        } else { // 縦辺
+            int idx = edge_idx - M;
+            int col = idx / (N - 1);
+            int row = idx % (N - 1);
+            return {N + col, row};
         }
     }
 
     void update_estimate(int len, edge_t edges) override {
-        array<int, N_VARS_LOCAL> simple_edges;
-        simple_edges.fill(0);
+        // パスに含まれる辺をブロックごとに振り分け
+        // simple_edges[block_id][local_id] = 1 or 0
+        static vector<vector<int>> simple_edges(N_BLOCKS); // staticで再利用
+        REP(b, N_BLOCKS) {
+            if(!simple_edges[b].empty()) fill(ALL(simple_edges[b]), 0);
+            else simple_edges[b].resize(B_SIZE, 0);
+        }
+        
+        vector<int> active_blocks; // 今回更新対象のブロック
 
-        REP(m, 2*M) {
+        REP(m, TOTAL_EDGES) {
             if (edges[m]) {
-                int y, x, dir;
-                if (m < M) { // 横
-                    y = m / (N - 1); x = m % (N - 1); dir = 0;
-                } else { // 縦
-                    int mm = m - M; x = mm / (N - 1); y = mm % (N - 1); dir = 1;
+                auto [bid, lid] = get_block_info(m);
+                if (simple_edges[bid][0] == 0 && inner_product(simple_edges[bid], simple_edges[bid]) == 0) {
+                     // check empty logic strictly if needed, but here vector is reused
+                     active_blocks.push_back(bid);
                 }
-                simple_edges[get_var_idx(dir, y, x)] += 1;
+                simple_edges[bid][lid] = 1;
             }
         }
 
-        const auto est_y = inner_product(simple_edges, hv);
-        const auto err = len - est_y;
+        double est_y = 0;
+        REP(m, TOTAL_EDGES) {
+            if (edges[m]) est_y += hv[m];
+        }
         
-        // 推定値ベースでノイズ分散を計算
-        //const double R = pow(0.2 * max(100, est_y), 2) / 12.0;
-        const double R = pow(0.2 * max(100, len), 2) / 12.0;
+        const double err = len - est_y;
+        const double R = pow(0.2 * max(100.0, (double)len), 2) / 12.0;
         double S = R;
         
-        array<double, N_VARS_LOCAL> cP;
-        cP.fill(0.0);
-        REP(j, N_VARS_LOCAL) {
-            REP(i, N_VARS_LOCAL) cP[j] += simple_edges[i] * hv_var[i][j];
-            S += cP[j] * simple_edges[j];
+        // ブロックごとの cP = P * h を計算
+        // cP_storage[block_id][local_idx]
+        static vector<vector<double>> cP_storage(N_BLOCKS);
+        REP(b, N_BLOCKS) {
+             if(cP_storage[b].size() != B_SIZE) cP_storage[b].resize(B_SIZE);
         }
 
-        array<double, N_VARS_LOCAL> k;
-        k.fill(0.0);
-        REP(i, N_VARS_LOCAL) {
-            double tmp = 0;
-            REP(j, N_VARS_LOCAL) tmp += hv_var[i][j] * simple_edges[j];
-            k[i] = tmp / S;
+        for (int b : active_blocks) {
+            // cP[b] = P_b * simple_edges[b]
+            // 行列ベクトル積
+            REP(i, B_SIZE) {
+                double val = 0;
+                // P_b は対称行列だが blocks[b] には全成分入っている
+                // スパース性を利用: simple_edges[b][j] == 1 の列だけ足す
+                int row_offset = i * B_SIZE;
+                REP(j, B_SIZE) {
+                    if (simple_edges[b][j]) {
+                        val += blocks[b][row_offset + j];
+                    }
+                }
+                cP_storage[b][i] = val;
+            }
+
+            // S += h^T * P * h = h^T * cP
+            double block_S = 0;
+            REP(j, B_SIZE) {
+                if (simple_edges[b][j]) {
+                    block_S += cP_storage[b][j];
+                }
+            }
+            S += block_S;
         }
 
-        REP(i, N_VARS_LOCAL) {
-            hv[i] = max(10.0, hv[i] + k[i] * err);
-        }
-
-        REP(i, N_VARS_LOCAL) {
-            REP(j, N_VARS_LOCAL) {
-                hv_var[i][j] -= k[i] * cP[j];
+        // 更新
+        for (int b : active_blocks) {
+            // Kalman Gain K = cP / S
+            REP(i, B_SIZE) {
+                double k = cP_storage[b][i] / S;
+                
+                // 変数更新
+                int edge_idx = (b < N) ? (b * (N - 1) + i) : (M + (b - N) * (N - 1) + i);
+                hv[edge_idx] = max(10.0, hv[edge_idx] + k * err);
+                
+                // 分散更新 P_new = P - K * S * K^T = P - cP * cP^T / S
+                int row_offset = i * B_SIZE;
+                REP(j, B_SIZE) {
+                    blocks[b][row_offset + j] -= k * cP_storage[b][j];
+                }
             }
         }
         
-        // === 安定化処理 (実験のためコメントアウト) ===
-        /*
-        REP(i, N_VARS_LOCAL) {
-             REP(j, i) {
-                double val = (hv_var[i][j] + hv_var[j][i]) * 0.5;
-                hv_var[i][j] = val;
-                hv_var[j][i] = val;
-            }
-            if(hv_var[i][i] < 1.0) hv_var[i][i] = 1.0;
-            
-            // プロセスノイズ
-            hv_var[i][i] += 50.0;
-        }
-        */
-        // ==========================================
-
         log_likelihood -= (log(S) + err * err / S) / 2;
     }
 
     double get_edge_weight(int dir, int y, int x) const override {
-        int v_idx = get_var_idx(dir, y, x);
-        return hv[v_idx];
+        int idx = -1;
+        if (dir == 0) idx = y * (N - 1) + x;
+        else idx = M + x * (N - 1) + y;
+        return hv[idx];
     }
     
     double get_variance(int dir, int y, int x) const override {
-        int v_idx = get_var_idx(dir, y, x);
-        return hv_var[v_idx][v_idx];
+        int idx = -1;
+        if (dir == 0) idx = y * (N - 1) + x;
+        else idx = M + x * (N - 1) + y;
+        
+        auto [bid, lid] = get_block_info(idx);
+        return blocks[bid][lid * B_SIZE + lid];
     }
 };
 
-pair<vector<int>, edge_t> get_path(int src, int dst, const BaseModel& model) {
+pair<vector<int>, edge_t> get_path(int src, int dst, const BaseModel& model, int k) {
     vector<double> dist(N * N, 1e18);
     vector<int> prev_node(N * N, -1);
     vector<int> prev_dir(N * N, -1);
@@ -241,9 +305,15 @@ pair<vector<int>, edge_t> get_path(int src, int dst, const BaseModel& model) {
             if (dir == 2) tx = x - 1; 
             if (dir == 3) ty = y - 1; 
             
-            double mu = model.get_edge_weight(dir, ty, tx);
-            double sigma = sqrt(model.get_variance(dir, ty, tx));
-            double alpha = 1.0; 
+            // L, U は逆方向の辺 (R, D) として参照
+            int q_dir = (dir == 2) ? 0 : (dir == 3 ? 1 : dir);
+            
+            double mu = model.get_edge_weight(q_dir, ty, tx);
+            double sigma = sqrt(max(0.0, model.get_variance(q_dir, ty, tx)));
+            
+            // LCB: 動的alpha
+            double progress = (double)k / K;
+            double alpha = 1.5 * (1.0 - progress); 
             double weight = max(10.0, mu - alpha * sigma);
 
             if (dist[v] > dist[u] + weight) {
@@ -278,41 +348,42 @@ pair<vector<int>, edge_t> get_path(int src, int dst, const BaseModel& model) {
 }
 
 void solve(const double end_time) {
-    // マルチ解像度モデルの構築
     vector<unique_ptr<BaseModel>> models;
     
-    // 解像度1 (60変数) - 低解像度、高安定
-    models.push_back(make_unique<Model<1>>(500));
-    models.push_back(make_unique<Model<1>>(1000));
-    models.push_back(make_unique<Model<1>>(1500));
+    // M=1 仮定モデル (一様コスト)
+    // ノイズの大きさ D を変えてバリエーションを持たせる
+    models.push_back(make_unique<ModelEdge>(Structure::M1, 250));
+    models.push_back(make_unique<ModelEdge>(Structure::M1, 750));
+    models.push_back(make_unique<ModelEdge>(Structure::M1, 1250));
+    models.push_back(make_unique<ModelEdge>(Structure::M1, 1750));
     
-    // 解像度2 (120変数) - 中解像度、バランス
-    // Dを変えてバリエーションを持たせる
-    models.push_back(make_unique<Model<2>>(500));
-    models.push_back(make_unique<Model<2>>(1000));
-    models.push_back(make_unique<Model<2>>(1500));
-    
-    // 解像度4 (240変数) - 高解像度、情報が必要
-    models.push_back(make_unique<Model<4>>(500));
-    models.push_back(make_unique<Model<4>>(1000));
-    models.push_back(make_unique<Model<4>>(1500));
+    // M=2 仮定モデル (分離コスト)
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 250));
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 750));
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 1250));
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 1750));
 
     Query query;
     REP(k, K) {
         const auto [s, t] = query.get_query();
         
-        // 尤度が最大のモデルを選択
-        const auto& best_model = *max_element(ALL(models), [](const auto& a, const auto& b) {
-            return a->log_likelihood < b->log_likelihood;
-        });
+        // 尤度最大モデル選択
+        int best_idx = 0;
+        double max_ll = -1e18;
+        REP(i, models.size()) {
+            if (models[i]->log_likelihood > max_ll) {
+                max_ll = models[i]->log_likelihood;
+                best_idx = i;
+            }
+        }
         
-        // デバッグ用: どの解像度が選ばれたかを確認したい場合は以下を有効化
-        DEBUG("k={}, Selected Vars={}, Likelihood={}\n", k, best_model->n_vars, best_model->log_likelihood);
+        const auto& m = models[best_idx];
+        string type_str = (m->type == Structure::M1) ? "M1" : "M2";
+        DEBUG("k={:3d} | Sel: {} (D={:4d}) | LL={:.1f}\n", k, type_str, m->D, max_ll);
 
-        const auto [path, edges] = get_path(s, t, *best_model);
+        const auto [path, edges] = get_path(s, t, *m, k);
         const auto len = query.put_path(path);
         
-        // 全モデル更新
         for (auto& model : models) {
             model->update_estimate(len, edges);
         }
