@@ -31,10 +31,6 @@ static mt19937 engine;
 constexpr int N = 30;
 constexpr int K = 1000;
 
-// 【変更点1】変数の数を4倍(120個)にする
-// 0-29: Row Left, 30-59: Row Right, 60-89: Col Top, 90-119: Col Bottom
-constexpr int N_VARS = 4 * N;
-
 namespace Env {
     constexpr double time_limit = 1.950;
 };
@@ -56,7 +52,7 @@ constexpr int dx[] = {1, 0, -1, 0};
 constexpr int dy[] = {0, 1, 0, -1};
 constexpr char dirs[] = {'R', 'D', 'L', 'U'};
 
-// ... (Utility functions omitted for brevity, same as before) ...
+// ... Utility functions ...
 unsigned int randxor(){ static unsigned int x=123456789,y=362436069,z=521288629,w=88675123; unsigned int t=(x^(x<<11));x=y;y=z;z=w; return(w=(w^(w>>19))^(t^(t>>8))); }
 double rand01(){ return 1.0*randxor()/numeric_limits<unsigned int>::max(); }
 int rand_int(const int left, const int right){ return randxor()%(right-left)+left; }
@@ -68,19 +64,6 @@ using edge_t = bitset<2 * M>;
 
 int enc(int y, int x) { return y*N + x; }
 pair<int, int> dec(int v) { return {v / N, v % N}; }
-
-// 【変更点2】座標と方向から変数のインデックス(0~119)を取得する関数
-int get_var_idx(int dir, int y, int x) {
-    if (dir == 0 || dir == 2) { // 横移動 (Row)
-        // xが中央(15)より左なら前半(0~29), 右なら後半(30~59)
-        int is_right = (x >= N / 2);
-        return y + (is_right ? N : 0);
-    } else { // 縦移動 (Col)
-        // yが中央(15)より上なら前半(60~89), 下なら後半(90~119)
-        int is_bottom = (y >= N / 2);
-        return 2 * N + x + (is_bottom ? N : 0);
-    }
-}
 
 struct Query {
     pair<int, int> get_query() {
@@ -102,105 +85,135 @@ int inner_product(T a, U b) {
     return ret;
 }
 
-struct Model {
-    int D;
-    array<double, N_VARS> hv; // サイズ変更
-    array<array<double, N_VARS>, N_VARS> hv_var; // サイズ変更
+// 基底クラス
+struct BaseModel {
     double log_likelihood;
+    int n_vars; // 識別用(デバッグ等)
+    
+    BaseModel(int n) : log_likelihood(0.0), n_vars(n) {}
+    virtual ~BaseModel() = default;
 
-    Model(int D) : D(D), log_likelihood(0.0) {
-        for (auto& v : hv) v = 5000.0;
-        // 初期分散の設定
-        // M=2対応で変数を分割したが、初期状態では「左右(上下)は同じ値に近い」という相関を入れるのが理想
-        // 今回は簡単のため独立として初期化するが、プロセスノイズで調整される
-        REP(i, N_VARS) {
-            REP(j, N_VARS) {
+    virtual void update_estimate(int len, edge_t edges) = 0;
+    virtual double get_edge_weight(int dir, int y, int x) const = 0;
+    virtual double get_variance(int dir, int y, int x) const = 0;
+};
+
+// テンプレートモデルクラス
+// DIV=1 -> 60変数, DIV=2 -> 120変数, DIV=4 -> 240変数
+template <int DIV>
+struct Model : public BaseModel {
+    static constexpr int N_VARS_LOCAL = 2 * N * DIV;
+    
+    int D;
+    array<double, N_VARS_LOCAL> hv;
+    array<array<double, N_VARS_LOCAL>, N_VARS_LOCAL> hv_var;
+
+    Model(int D) : BaseModel(N_VARS_LOCAL), D(D) {
+        hv.fill(5000.0);
+        // 初期分散
+        REP(i, N_VARS_LOCAL) {
+            REP(j, N_VARS_LOCAL) {
                 hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
             }
         }
     }
 
-    void update_estimate(int len, edge_t edges) {
-        array<int, N_VARS> simple_edges;
+    // 座標から変数インデックスを計算
+    int get_var_idx(int dir, int y, int x) const {
+        // セグメント計算: (x * DIV) / N をクリップ
+        if (dir == 0 || dir == 2) { // 横 (Row) 0 ~ N*DIV-1
+            // Row ID: y * DIV + seg
+            int seg = (x * DIV) / N;
+            if (seg >= DIV) seg = DIV - 1;
+            return y * DIV + seg;
+        } else { // 縦 (Col) N*DIV ~ 2*N*DIV-1
+            // Col ID: x * DIV + seg (+ offset)
+            int seg = (y * DIV) / N;
+            if (seg >= DIV) seg = DIV - 1;
+            return N * DIV + x * DIV + seg;
+        }
+    }
+
+    void update_estimate(int len, edge_t edges) override {
+        array<int, N_VARS_LOCAL> simple_edges;
         simple_edges.fill(0);
 
-        // edge_t から 変数IDへのマッピング
         REP(m, 2*M) {
             if (edges[m]) {
                 int y, x, dir;
-                if (m < M) { // 横辺
-                    y = m / (N - 1);
-                    x = m % (N - 1); // (y, x) -> (y, x+1)
-                    // xとx+1の間の辺。
-                    // マッピングの都合上、左側のセル(x)基準で判定するか、辺の中点で判定するか。
-                    // ここでは「辺がある場所」が右半分か左半分かで判定
-                    dir = 0; // Rとして扱う
-                } else { // 縦辺
-                    int mm = m - M;
-                    x = mm / (N - 1); // 縦方向の並び順注意
-                    y = mm % (N - 1); // (y, x) -> (y+1, x)
-                    dir = 1; // Dとして扱う
+                if (m < M) { // 横
+                    y = m / (N - 1); x = m % (N - 1); dir = 0;
+                } else { // 縦
+                    int mm = m - M; x = mm / (N - 1); y = mm % (N - 1); dir = 1;
                 }
-                
-                // M=2対応: 辺の位置に応じて適切な変数IDを加算
-                // 横辺のxは 0~28. 14以下なら左, 15以上なら右とみなす
-                // 縦辺のyは 0~28. 14以下なら上, 15以上なら下とみなす
-                int v_idx = get_var_idx(dir, y, x);
-                simple_edges[v_idx] += 1;
+                simple_edges[get_var_idx(dir, y, x)] += 1;
             }
         }
 
         const auto est_y = inner_product(simple_edges, hv);
         const auto err = len - est_y;
         
-        // 推定値ベースでノイズを見積もる方が安定する
-        const double R = pow(0.2 * max(100, est_y), 2) / 12.0; 
+        // 推定値ベースでノイズ分散を計算
+        //const double R = pow(0.2 * max(100, est_y), 2) / 12.0;
+        const double R = pow(0.2 * max(100, len), 2) / 12.0;
         double S = R;
         
-        array<double, N_VARS> cP;
+        array<double, N_VARS_LOCAL> cP;
         cP.fill(0.0);
-        REP(j, N_VARS) {
-            REP(i, N_VARS) cP[j] += simple_edges[i] * hv_var[i][j];
+        REP(j, N_VARS_LOCAL) {
+            REP(i, N_VARS_LOCAL) cP[j] += simple_edges[i] * hv_var[i][j];
             S += cP[j] * simple_edges[j];
         }
 
-        array<double, N_VARS> k;
+        array<double, N_VARS_LOCAL> k;
         k.fill(0.0);
-        REP(i, N_VARS) {
+        REP(i, N_VARS_LOCAL) {
             double tmp = 0;
-            REP(j, N_VARS) tmp += hv_var[i][j] * simple_edges[j];
+            REP(j, N_VARS_LOCAL) tmp += hv_var[i][j] * simple_edges[j];
             k[i] = tmp / S;
         }
 
-        REP(i, N_VARS) {
-            hv[i] = max(0.0, hv[i] + k[i] * err); // 負になるとDijkstraが壊れるので下限設定
+        REP(i, N_VARS_LOCAL) {
+            hv[i] = max(10.0, hv[i] + k[i] * err);
         }
 
-        REP(i, N_VARS) {
-            REP(j, N_VARS) {
+        REP(i, N_VARS_LOCAL) {
+            REP(j, N_VARS_LOCAL) {
                 hv_var[i][j] -= k[i] * cP[j];
             }
         }
         
-        // 【変更点3】安定化処理の復元（これが無いとM=2対応しても精度が出ない）
-        //REP(i, N_VARS) {
-        //    REP(j, i) {
-        //        double val = (hv_var[i][j] + hv_var[j][i]) * 0.5;
-        //        hv_var[i][j] = val;
-        //        hv_var[j][i] = val;
-        //    }
-        //    if (hv_var[i][i] < 1e-4) hv_var[i][i] = 1e-4;
-        //    
-        //    // プロセスノイズ (忘却効果)
-        //    // これにより、クエリ後半でも柔軟に「実はここコスト高かった」と修正できるようになる
-        //    hv_var[i][i] += 100.0; 
-        //}
+        // === 安定化処理 (実験のためコメントアウト) ===
+        /*
+        REP(i, N_VARS_LOCAL) {
+             REP(j, i) {
+                double val = (hv_var[i][j] + hv_var[j][i]) * 0.5;
+                hv_var[i][j] = val;
+                hv_var[j][i] = val;
+            }
+            if(hv_var[i][i] < 1.0) hv_var[i][i] = 1.0;
+            
+            // プロセスノイズ
+            hv_var[i][i] += 50.0;
+        }
+        */
+        // ==========================================
 
         log_likelihood -= (log(S) + err * err / S) / 2;
     }
+
+    double get_edge_weight(int dir, int y, int x) const override {
+        int v_idx = get_var_idx(dir, y, x);
+        return hv[v_idx];
+    }
+    
+    double get_variance(int dir, int y, int x) const override {
+        int v_idx = get_var_idx(dir, y, x);
+        return hv_var[v_idx][v_idx];
+    }
 };
 
-pair<vector<int>, edge_t> get_path(int src, int dst, const Model& model) {
+pair<vector<int>, edge_t> get_path(int src, int dst, const BaseModel& model) {
     vector<double> dist(N * N, 1e18);
     vector<int> prev_node(N * N, -1);
     vector<int> prev_dir(N * N, -1);
@@ -224,22 +237,13 @@ pair<vector<int>, edge_t> get_path(int src, int dst, const Model& model) {
 
             int v = enc(ny, nx);
             
-            // 【変更点】get_var_idxを使ってコストを取得
-            // 辺の座標判定:
-            // (y,x) -> (y,x+1) : 横辺, 座標は(y,x)で判定
-            // (y,x) -> (y+1,x) : 縦辺, 座標は(y,x)で判定
-            // (y,x) -> (y,x-1) : 横辺, 座標は(y,x-1)で判定
-            // (y,x) -> (y-1,x) : 縦辺, 座標は(y-1,x)で判定
             int ty = y, tx = x;
-            if (dir == 2) tx = x - 1; // L
-            if (dir == 3) ty = y - 1; // U
+            if (dir == 2) tx = x - 1; 
+            if (dir == 3) ty = y - 1; 
             
-            int v_idx = get_var_idx(dir, ty, tx);
-            
-            // 探索と活用: 平均 - alpha * 標準偏差
-            double mu = model.hv[v_idx];
-            double sigma = sqrt(model.hv_var[v_idx][v_idx]);
-            double alpha = 1.0; // 探索係数（調整の余地あり）
+            double mu = model.get_edge_weight(dir, ty, tx);
+            double sigma = sqrt(model.get_variance(dir, ty, tx));
+            double alpha = 1.0; 
             double weight = max(10.0, mu - alpha * sigma);
 
             if (dist[v] > dist[u] + weight) {
@@ -261,7 +265,6 @@ pair<vector<int>, edge_t> get_path(int src, int dst, const Model& model) {
         
         auto [py, px] = dec(prev);
         int edge_idx = -1;
-        // マッピングは変えず、edge_tの記録のためだけに残す
         if (dir == 0) edge_idx = py * (N - 1) + px;
         else if (dir == 1) edge_idx = M + px * (N - 1) + py;
         else if (dir == 2) edge_idx = py * (N - 1) + (px - 1);
@@ -275,31 +278,43 @@ pair<vector<int>, edge_t> get_path(int src, int dst, const Model& model) {
 }
 
 void solve(const double end_time) {
-    vector<Model> models;
-    // Dのバリエーション
-    models.emplace_back(500);
-    models.emplace_back(1000);
-    models.emplace_back(1500);
+    // マルチ解像度モデルの構築
+    vector<unique_ptr<BaseModel>> models;
+    
+    // 解像度1 (60変数) - 低解像度、高安定
+    models.push_back(make_unique<Model<1>>(500));
+    models.push_back(make_unique<Model<1>>(1000));
+    models.push_back(make_unique<Model<1>>(1500));
+    
+    // 解像度2 (120変数) - 中解像度、バランス
+    // Dを変えてバリエーションを持たせる
+    models.push_back(make_unique<Model<2>>(500));
+    models.push_back(make_unique<Model<2>>(1000));
+    models.push_back(make_unique<Model<2>>(1500));
+    
+    // 解像度4 (240変数) - 高解像度、情報が必要
+    models.push_back(make_unique<Model<4>>(500));
+    models.push_back(make_unique<Model<4>>(1000));
+    models.push_back(make_unique<Model<4>>(1500));
 
     Query query;
     REP(k, K) {
-        // デバッグ出力
-        // vector<double> likelihoods;
-        // for (const auto& model : models) likelihoods.push_back(model.log_likelihood);
-        // DEBUG("k = {}, likelihoods = {}\n", k, likelihoods);
-
         const auto [s, t] = query.get_query();
         
-        // 尤度が最大のモデルを採用
-        const auto& best_model = *max_element(ALL(models), [](const Model& a, const Model& b) {
-            return a.log_likelihood < b.log_likelihood;
+        // 尤度が最大のモデルを選択
+        const auto& best_model = *max_element(ALL(models), [](const auto& a, const auto& b) {
+            return a->log_likelihood < b->log_likelihood;
         });
         
-        const auto [path, edges] = get_path(s, t, best_model);
+        // デバッグ用: どの解像度が選ばれたかを確認したい場合は以下を有効化
+        DEBUG("k={}, Selected Vars={}, Likelihood={}\n", k, best_model->n_vars, best_model->log_likelihood);
+
+        const auto [path, edges] = get_path(s, t, *best_model);
         const auto len = query.put_path(path);
         
+        // 全モデル更新
         for (auto& model : models) {
-            model.update_estimate(len, edges);
+            model->update_estimate(len, edges);
         }
     }
 }
@@ -308,5 +323,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]){
     ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
     solve(Env::time_limit);
+    DEBUG("time : {}\n", timer.get_time());
     return 0;
 }
