@@ -183,18 +183,18 @@ struct Model {
         }
         
         // 【変更点3】安定化処理の復元（これが無いとM=2対応しても精度が出ない）
-        REP(i, N_VARS) {
-            REP(j, i) {
-                double val = (hv_var[i][j] + hv_var[j][i]) * 0.5;
-                //hv_var[i][j] = val;
-                //hv_var[j][i] = val;
-            }
-            //if (hv_var[i][i] < 1e-4) hv_var[i][i] = 1e-4;
-            
-            // プロセスノイズ (忘却効果)
-            // これにより、クエリ後半でも柔軟に「実はここコスト高かった」と修正できるようになる
-            //hv_var[i][i] += 100.0; 
-        }
+        //REP(i, N_VARS) {
+        //    REP(j, i) {
+        //        double val = (hv_var[i][j] + hv_var[j][i]) * 0.5;
+        //        hv_var[i][j] = val;
+        //        hv_var[j][i] = val;
+        //    }
+        //    if (hv_var[i][i] < 1e-4) hv_var[i][i] = 1e-4;
+        //    
+        //    // プロセスノイズ (忘却効果)
+        //    // これにより、クエリ後半でも柔軟に「実はここコスト高かった」と修正できるようになる
+        //    hv_var[i][i] += 100.0; 
+        //}
 
         log_likelihood -= (log(S) + err * err / S) / 2;
     }
