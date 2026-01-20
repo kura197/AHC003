@@ -25,20 +25,19 @@ EPS = 0.00001
 class Params:
     bins = {}
     ranges = {}
-    #bins = {'K': 4, 'T': 15, 'D': 10}
-    #ranges = {  # [left, right)
-    #    'K': [4, 20+1],
-    #    'T': [4000, 64000+1],
-    #    'D': [10, 10000+1],
-    #}
+    bins = {'D': 10, 'M': 2}
+    ranges = {  # [left, right)
+        'D': [100, 2000+1],
+        'M': [1, 2+1],
+    }
 
     def read_params(t, tests_path):
         param_dicts = {}
         input_file = os.path.join(tests_path, '{:04}.txt'.format(t))
         with open(input_file, 'r') as fp:
             line = fp.readline().split(' ')
-            #param_dicts['K'] = int(line[1])
-            #param_dicts['T'] = int(line[3])
+            param_dicts['D'] = int(line[0])
+            param_dicts['M'] = int(line[1])
             #param_dicts['D'] = int(line[4])
         return param_dicts
 
