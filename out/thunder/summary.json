@@ -1,0 +1,282 @@
+{
+  "absolute_scores": {
+    "total": 19488461485,
+    "average": 974423074.25,
+    "estimated_total": 97442307425.0
+  },
+  "relative_scores": {
+    "average_log_ratio": 1.001469977685707,
+    "improved_cases": 9,
+    "decreased_cases": 11
+  },
+  "parameter_analysis": {
+    "D": [
+      {
+        "range": "[100 - 291)",
+        "average_score_change": 0.02026292820155436,
+        "count": 3
+      },
+      {
+        "range": "[291 - 482)",
+        "average_score_change": -0.006048637202855367,
+        "count": 2
+      },
+      {
+        "range": "[482 - 673)",
+        "average_score_change": 0.005607286660611749,
+        "count": 4
+      },
+      {
+        "range": "[673 - 864)",
+        "average_score_change": -0.0002989758492283334,
+        "count": 3
+      },
+      {
+        "range": "[864 - 1055)",
+        "average_score_change": 0.0,
+        "count": 0
+      },
+      {
+        "range": "[1055 - 1246)",
+        "average_score_change": -0.0037635436725550107,
+        "count": 3
+      },
+      {
+        "range": "[1246 - 1437)",
+        "average_score_change": -0.006547814981797721,
+        "count": 3
+      },
+      {
+        "range": "[1437 - 1628)",
+        "average_score_change": 0.0021265372824403883,
+        "count": 1
+      },
+      {
+        "range": "[1628 - 1819)",
+        "average_score_change": 0.0,
+        "count": 0
+      },
+      {
+        "range": "[1819 - 2010)",
+        "average_score_change": -0.0009802381189377707,
+        "count": 1
+      }
+    ],
+    "M": [
+      {
+        "range": "[1 - 2)",
+        "average_score_change": -0.004843851389016741,
+        "count": 7
+      },
+      {
+        "range": "[2 - 3)",
+        "average_score_change": 0.005718685555175074,
+        "count": 13
+      }
+    ]
+  },
+  "individual_test_scores": [
+    {
+      "test_case": 0,
+      "score": 978914993,
+      "base_score": 983394881,
+      "relative_score_percent": 99.5444466829597,
+      "params": {
+        "D": 1065,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 1,
+      "score": 976714659,
+      "base_score": 971538828,
+      "relative_score_percent": 100.53274566603322,
+      "params": {
+        "D": 696,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 2,
+      "score": 984520838,
+      "base_score": 988306713,
+      "relative_score_percent": 99.61693318984872,
+      "params": {
+        "D": 721,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 3,
+      "score": 950581102,
+      "base_score": 970578499,
+      "relative_score_percent": 97.93964145912942,
+      "params": {
+        "D": 1282,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 4,
+      "score": 973502793,
+      "base_score": 971883426,
+      "relative_score_percent": 100.16662152647925,
+      "params": {
+        "D": 1148,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 5,
+      "score": 969052359,
+      "base_score": 967910340,
+      "relative_score_percent": 100.11798809794718,
+      "params": {
+        "D": 1291,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 6,
+      "score": 974979921,
+      "base_score": 960373568,
+      "relative_score_percent": 101.52090327000754,
+      "params": {
+        "D": 114,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 7,
+      "score": 987153705,
+      "base_score": 992221101,
+      "relative_score_percent": 99.48928761997776,
+      "params": {
+        "D": 391,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 8,
+      "score": 983748832,
+      "base_score": 990673791,
+      "relative_score_percent": 99.30098493945117,
+      "params": {
+        "D": 353,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 9,
+      "score": 986465815,
+      "base_score": 988832800,
+      "relative_score_percent": 99.76062838934955,
+      "params": {
+        "D": 861,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 10,
+      "score": 980352186,
+      "base_score": 954497715,
+      "relative_score_percent": 102.70869909835248,
+      "params": {
+        "D": 171,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 11,
+      "score": 977929341,
+      "base_score": 966408350,
+      "relative_score_percent": 101.19214522515249,
+      "params": {
+        "D": 658,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 12,
+      "score": 967347754,
+      "base_score": 954283514,
+      "relative_score_percent": 101.36901034214031,
+      "params": {
+        "D": 569,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 13,
+      "score": 976368446,
+      "base_score": 984640721,
+      "relative_score_percent": 99.15986868879456,
+      "params": {
+        "D": 1206,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 14,
+      "score": 963101795,
+      "base_score": 963313474,
+      "relative_score_percent": 99.97802594838407,
+      "params": {
+        "D": 1355,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 15,
+      "score": 969988230,
+      "base_score": 967929891,
+      "relative_score_percent": 100.21265372824405,
+      "params": {
+        "D": 1612,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 16,
+      "score": 964657029,
+      "base_score": 965191701,
+      "relative_score_percent": 99.94460457964506,
+      "params": {
+        "D": 618,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 17,
+      "score": 987012960,
+      "base_score": 989614116,
+      "relative_score_percent": 99.73715451730682,
+      "params": {
+        "D": 671,
+        "M": 1
+      }
+    },
+    {
+      "test_case": 18,
+      "score": 978579868,
+      "base_score": 960811805,
+      "relative_score_percent": 101.8492760921063,
+      "params": {
+        "D": 153,
+        "M": 2
+      }
+    },
+    {
+      "test_case": 19,
+      "score": 957488859,
+      "base_score": 958428347,
+      "relative_score_percent": 99.90197618810622,
+      "params": {
+        "D": 1955,
+        "M": 2
+      }
+    }
+  ],
+  "host": "local",
+  "timestamp": "2026-01-27T10:44:45.118913"
+}
