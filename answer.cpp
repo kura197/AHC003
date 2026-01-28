@@ -381,7 +381,7 @@ pair<vector<int>, edge_t> get_path(int src, int dst,
 
     // 探索係数 (動的alpha)
     double progress = (double)k / K;
-    double alpha = 2.0 * (1.0 - progress); 
+    double alpha = 1.5 * pow(1.0 - progress, 2.0);
 
     while (!pq.empty()) {
         auto [d, u] = pq.top();
