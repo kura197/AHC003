@@ -343,7 +343,7 @@ struct ModelEdge : public BaseModel {
 };
 
 // ==========================================================
-// MCMCモデル (記事の実装)
+// MCMCモデル (高速化・安定化版)
 // ==========================================================
 struct ModelMCMC : public BaseModel {
     static constexpr int N_ROWS = N;
@@ -351,12 +351,16 @@ struct ModelMCMC : public BaseModel {
     static constexpr int N_SEGS = N_ROWS + N_COLS; // 60
     static constexpr int SEG_LEN = N - 1; // 29 edges per segment
 
+    struct HistoryCache {
+        uint8_t l[29]; // 分割点z=0..28 における左側の辺数
+        uint8_t r[29]; // 分割点z=0..28 における右側の辺数
+    };
+
     struct PathData {
         int path_id;
-        int len_total;
         double y_obs;
         double var_obs_base;
-        uint32_t edge_mask;
+        HistoryCache cache;
     };
 
     array<int, N_SEGS> z;
@@ -366,7 +370,7 @@ struct ModelMCMC : public BaseModel {
     array<double, TOTAL_EDGES> edge_mean;
     array<double, TOTAL_EDGES> edge_var;
     
-    // ★追加: 各セグメントごとのサンプリング回数カウンタ
+    // 累積統計更新用
     array<double, N_SEGS> seg_mean_n;
 
     vector<vector<PathData>> history;
@@ -384,8 +388,11 @@ struct ModelMCMC : public BaseModel {
         x1.fill(mu_prior);
         x2.fill(mu_prior);
         edge_mean.fill(mu_prior);
-        edge_var.fill(pow(D_val, 2)); 
-        seg_mean_n.fill(0.0); // 初期化
+        
+        double init_var = pow(D_val, 2); 
+        edge_var.fill(init_var);
+        
+        seg_mean_n.fill(0.0);
 
         history.resize(N_SEGS);
         current_predictions.reserve(K);
@@ -400,9 +407,7 @@ struct ModelMCMC : public BaseModel {
     }
     double det(const Mat2& m) const { return m.a * m.d - m.b * m.c; }
 
-    // コレスキー分解してサンプリング
     Vec2 sample_multivariate_normal(const Mat2& sigma, const Vec2& mu) {
-        // Sigma = L L^T
         double l11 = sqrt(max(1e-9, sigma.a));
         double l21 = sigma.c / l11;
         double l22 = sqrt(max(1e-9, sigma.d - l21 * l21));
@@ -412,7 +417,6 @@ struct ModelMCMC : public BaseModel {
         
         double z1 = l11 * u1;
         double z2 = l21 * u1 + l22 * u2;
-        
         return {mu.x + z1, mu.y + z2};
     }
 
@@ -431,22 +435,32 @@ struct ModelMCMC : public BaseModel {
                 }
             }
             if (used) {
-                int split = z[seg]; 
-                uint32_t left_mask = (1 << split) - 1;
-                int l = __builtin_popcount(mask & left_mask);
-                int r = __builtin_popcount(mask & ~left_mask);
+                PathData pd;
+                pd.path_id = n_obs;
+                pd.y_obs = obs_len;
+                //double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + 467777.778 * edges.count();
+                double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + (D*D / 3.0) * edges.count();
+                pd.var_obs_base = sigma2_obs;
                 
-                double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + (D*D / 3) * (l + r);
-                //double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + (1000*1000 / 3.0) * (l + r);
-                history[seg].push_back({n_obs, (int)edges.count(), obs_len, sigma2_obs, mask});
+                for (int k = 0; k <= 28; ++k) {
+                    uint32_t left_mask = (1 << k) - 1;
+                    pd.cache.l[k] = __builtin_popcount(mask & left_mask);
+                    pd.cache.r[k] = __builtin_popcount(mask & ~left_mask);
+                }
+
+                history[seg].push_back(pd);
+                
+                int split = z[seg]; 
+                int l = pd.cache.l[split];
+                int r = pd.cache.r[split];
                 pred_len += l * x1[seg] + r * x2[seg];
             }
         }
         current_predictions.push_back(pred_len);
         n_obs++;
 
+        //int n_samples = max(4, (int)(30 * pow(0.2, (double)n_obs / 1000.0)));
         int n_samples = max(2, (int)(20 * pow(0.2, (double)n_obs / 1000.0)));
-        //int n_samples = max(2, (int)(20 * pow(0.075, (double)n_obs / 1000.0)));
         
         double inv_s2 = 1.0 / sigma2_prior;
         Mat2 A0 = {inv_s2, 0, 0, inv_s2};
@@ -456,34 +470,30 @@ struct ModelMCMC : public BaseModel {
             REP(seg, N_SEGS) {
                 for (const auto& d : history[seg]) {
                     int split = z[seg];
-                    uint32_t left_mask = (1 << split) - 1;
-                    int l = __builtin_popcount(d.edge_mask & left_mask);
-                    int r = __builtin_popcount(d.edge_mask & ~left_mask);
-                    current_predictions[d.path_id] -= (l * x1[seg] + r * x2[seg]);
+                    double val = d.cache.l[split] * x1[seg] + d.cache.r[split] * x2[seg];
+                    current_predictions[d.path_id] -= val;
                 }
 
-                // Step 1: z sampling
                 vector<double> log_probs(30, -1e18);
                 REPi(k, 1, 29) {
                     Mat2 An = A0;
                     Vec2 bn = b0;
-                    uint32_t left_mask_k = (1 << k) - 1;
-
+                    
                     for (const auto& d : history[seg]) {
-                        int l = __builtin_popcount(d.edge_mask & left_mask_k);
-                        int r = __builtin_popcount(d.edge_mask & ~left_mask_k);
+                        int l = d.cache.l[k];
+                        int r = d.cache.r[k];
                         if (l == 0 && r == 0) continue;
 
                         double y_res = d.y_obs - current_predictions[d.path_id];
                         double w_inv = 1.0 / d.var_obs_base;
 
                         An.a += w_inv * l * l;
-                        An.b += w_inv * l * r;
-                        An.c += w_inv * l * r;
+                        An.b += w_inv * l * r; 
                         An.d += w_inv * r * r;
                         bn.x += w_inv * y_res * l;
                         bn.y += w_inv * y_res * r;
                     }
+                    An.c = An.b;
 
                     double detAn = det(An);
                     if (detAn < 1e-9) continue;
@@ -515,43 +525,36 @@ struct ModelMCMC : public BaseModel {
                 }
                 z[seg] = new_z;
 
-                // Step 2: X sampling
                 Mat2 An = A0;
                 Vec2 bn = b0;
-                uint32_t left_mask_z = (1 << new_z) - 1;
-                
                 for (const auto& d : history[seg]) {
-                    int l = __builtin_popcount(d.edge_mask & left_mask_z);
-                    int r = __builtin_popcount(d.edge_mask & ~left_mask_z);
+                    int l = d.cache.l[new_z];
+                    int r = d.cache.r[new_z];
                     if (l == 0 && r == 0) continue;
                     double y_res = d.y_obs - current_predictions[d.path_id];
                     double w_inv = 1.0 / d.var_obs_base;
                     An.a += w_inv * l * l;
                     An.b += w_inv * l * r;
-                    An.c += w_inv * l * r;
                     An.d += w_inv * r * r;
                     bn.x += w_inv * y_res * l;
                     bn.y += w_inv * y_res * r;
                 }
+                An.c = An.b;
 
                 Mat2 Sigma = inv(An);
                 Vec2 mu_post = {Sigma.a * bn.x + Sigma.b * bn.y, Sigma.c * bn.x + Sigma.d * bn.y};
                 Vec2 sample = sample_multivariate_normal(Sigma, mu_post);
                 
-                // ★クリッピング（mean_nを使うなら必須）
                 //x1[seg] = clamp(sample.x, 1000.0, 9000.0);
                 //x2[seg] = clamp(sample.y, 1000.0, 9000.0);
                 x1[seg] = sample.x;
                 x2[seg] = sample.y;
 
-                // 予測値書き戻し
                 for (const auto& d : history[seg]) {
-                    int l = __builtin_popcount(d.edge_mask & left_mask_z);
-                    int r = __builtin_popcount(d.edge_mask & ~left_mask_z);
-                    current_predictions[d.path_id] += (l * x1[seg] + r * x2[seg]);
+                    double val = d.cache.l[new_z] * x1[seg] + d.cache.r[new_z] * x2[seg];
+                    current_predictions[d.path_id] += val;
                 }
 
-                // ★★★ mean_n による累積統計の更新 (Welford's Algorithm like) ★★★
                 int offset = (seg < N_ROWS) ? (seg * SEG_LEN) : (M_GRID + (seg - N_ROWS) * SEG_LEN);
                 //double n = seg_mean_n[seg];
                 double n = 0;
@@ -565,15 +568,34 @@ struct ModelMCMC : public BaseModel {
                     double dmean = (val - old_mean) / next_n;
                     double new_mean = old_mean + dmean;
                     
-                    // 分散の更新: V_new = (n * V_old + (x - old_mean)(x - new_mean)) / (n + 1)
-                    // ただし edge_var は分散そのもの
-                    edge_var[edge_idx] = (n * edge_var[edge_idx] + (val - old_mean) * (val - new_mean)) / next_n;
+                    double new_var = (n * edge_var[edge_idx] + (val - old_mean) * (val - new_mean)) / next_n;
+                    edge_var[edge_idx] = max(100.0, new_var);
                     edge_mean[edge_idx] = new_mean;
                 }
-                seg_mean_n[seg] = next_n; // カウントアップ
+                seg_mean_n[seg] = next_n; 
             } 
         } 
-        // ログ尤度計算は省略
+
+        // ==========================================
+        // ログ出力機能の追加
+        // ==========================================
+        #ifndef SUBMIT
+        // 最新の予測値 (サンプリング更新後)
+        double final_pred = current_predictions.back();
+        // 期待コスト（現在の平均モデルに基づく予測）
+        // ※正確には探索時に計算したdist[t]だが、ここでは現在のモデルでの経路長を再計算
+        double expect_cost = 0;
+        REP(m, TOTAL_EDGES) {
+            if (edges[m]) expect_cost += edge_mean[m];
+        }
+        
+        // Gamma (alpha) の計算 (solve関数と同じロジック)
+        double progress = (double)(n_obs - 1) / K;
+        double gamma_val = 1.5 * pow(1.0 - progress, 2.0);
+
+        DEBUG("iter: {:3d} | expect: {:7.1f} | gamma: {:.3f} | pred: {:7.1f} | GT: {:7.1f} | error: {:+7.1f}\n", 
+              n_obs - 1, expect_cost, gamma_val, final_pred, obs_len, obs_len - final_pred);
+        #endif
     }
 
     double get_edge_weight(int dir, int y, int x) const override {
@@ -668,10 +690,21 @@ pair<vector<int>, edge_t> get_path(int src, int dst,
 void solve(const double end_time) {
     vector<unique_ptr<BaseModel>> models;
     
+    //// --- Model Definition ---
+    //models.push_back(make_unique<Model<1>>(600)); 
+    //models.push_back(make_unique<Model<1>>(1200)); 
+    //models.push_back(make_unique<Model<2>>(600)); 
+    //models.push_back(make_unique<Model<2>>(1200)); 
+    
+    //models.push_back(make_unique<ModelEdge>(Structure::M1, 750));
+    
+    //// MCMCの代理となるモデル
+    //models.push_back(make_unique<ModelEdge>(Structure::M2, 750));
+    //models.push_back(make_unique<ModelEdge>(Structure::M2, 350)); 
+    
     // MCMCモデル
-    const int D = 300;
-    models.push_back(make_unique<ModelEdge>(Structure::M2, D)); 
-    models.push_back(make_unique<ModelMCMC>(D)); 
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 300));
+    models.push_back(make_unique<ModelMCMC>(300)); 
 
     Query query;
     REP(k, K) {
@@ -703,7 +736,7 @@ void solve(const double end_time) {
 
         double mcmc_prob = 0.0;
         REP(i, models.size()) {
-            if (models[i]->type == Structure::M2 && models[i]->D == D) {
+            if (models[i]->type == Structure::M2) {
                 mcmc_prob += weights[i];
             }
         }
