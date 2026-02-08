@@ -7,6 +7,7 @@
 
 #include <bits/stdc++.h>
 #include <format>
+#include <fstream> // デバッグ用
 
 using namespace std;
 using namespace chrono;
@@ -35,6 +36,17 @@ constexpr int K = 1000;
 namespace Env {
     constexpr double time_limit = 1.950;
 };
+
+
+// ==========================================
+// Debug Input Feature
+// ==========================================
+//#define DEBUG_INPUT
+
+#ifdef DEBUG_INPUT
+std::string DEBUG_FILENAME = "./out/tmp_result/0010.txt"; 
+std::ifstream debug_ifs;
+#endif
 
 // ==========================================
 // Debug Utils
@@ -124,87 +136,6 @@ struct BaseModel {
     virtual void update_estimate(int len, edge_t edges) = 0;
     virtual double get_edge_weight(int dir, int y, int x) const = 0;
     virtual double get_variance(int dir, int y, int x) const = 0;
-};
-
-// ==========================================================
-// 従来モデル (60, 120, 240変数)
-// ==========================================================
-template <int DIV>
-struct Model : public BaseModel {
-    static constexpr int N_VARS_LOCAL = 2 * N * DIV;
-    
-    array<double, N_VARS_LOCAL> hv;
-    array<array<double, N_VARS_LOCAL>, N_VARS_LOCAL> hv_var;
-
-    Model(int D) : BaseModel(N_VARS_LOCAL, Structure::NONE, D) {
-        hv.fill(5000.0);
-        // 初期分散
-        REP(i, N_VARS_LOCAL) {
-            REP(j, N_VARS_LOCAL) {
-                hv_var[i][j] = (i == j) ? pow(8000 - 2*D, 2) / 12 : 0.0;
-            }
-        }
-    }
-
-    int get_var_idx(int dir, int y, int x) const {
-        if (dir == 0 || dir == 2) { // 横 (Row)
-            int seg = (x * DIV) / N;
-            if (seg >= DIV) seg = DIV - 1;
-            return y * DIV + seg;
-        } else { // 縦 (Col)
-            int seg = (y * DIV) / N;
-            if (seg >= DIV) seg = DIV - 1;
-            return N * DIV + x * DIV + seg;
-        }
-    }
-
-    void update_estimate(int len, edge_t edges) override {
-        array<int, N_VARS_LOCAL> simple_edges;
-        simple_edges.fill(0);
-
-        REP(m, TOTAL_EDGES) {
-            if (edges[m]) {
-                int y, x, dir;
-                if (m < M_GRID) { y = m / (N - 1); x = m % (N - 1); dir = 0; }
-                else { int mm = m - M_GRID; x = mm / (N - 1); y = mm % (N - 1); dir = 1; }
-                simple_edges[get_var_idx(dir, y, x)] += 1;
-            }
-        }
-
-        const auto est_y = inner_product(simple_edges, hv);
-        const auto err = len - est_y;
-        
-        const double R = pow(0.2 * max(100.0, (double)len), 2) / 12.0;
-        double S = R;
-        
-        array<double, N_VARS_LOCAL> cP;
-        cP.fill(0.0);
-        REP(j, N_VARS_LOCAL) {
-            REP(i, N_VARS_LOCAL) cP[j] += simple_edges[i] * hv_var[i][j];
-            S += cP[j] * simple_edges[j];
-        }
-
-        array<double, N_VARS_LOCAL> k;
-        k.fill(0.0);
-        REP(i, N_VARS_LOCAL) {
-            double tmp = 0;
-            REP(j, N_VARS_LOCAL) tmp += hv_var[i][j] * simple_edges[j];
-            k[i] = tmp / S;
-        }
-
-        REP(i, N_VARS_LOCAL) hv[i] = max(10.0, hv[i] + k[i] * err);
-        REP(i, N_VARS_LOCAL) REP(j, N_VARS_LOCAL) hv_var[i][j] -= k[i] * cP[j];
-
-        log_likelihood -= (log(S) + err * err / S) / 2;
-    }
-
-    double get_edge_weight(int dir, int y, int x) const override {
-        return hv[get_var_idx(dir, y, x)];
-    }
-    double get_variance(int dir, int y, int x) const override {
-        int idx = get_var_idx(dir, y, x);
-        return hv_var[idx][idx];
-    }
 };
 
 // ==========================================================
@@ -389,6 +320,7 @@ struct ModelMCMC : public BaseModel {
         x2.fill(mu_prior);
         edge_mean.fill(mu_prior);
         
+        // 初期分散
         double init_var = pow(D_val, 2); 
         edge_var.fill(init_var);
         
@@ -397,8 +329,11 @@ struct ModelMCMC : public BaseModel {
         history.resize(N_SEGS);
         current_predictions.reserve(K);
 
-        double width = 8000.0 - 2.0 * D_val;
-        sigma2_prior = (width * width) / 12.0;
+        //double width = 8000.0 - 2.0 * D_val;
+        //double width = 4000.0 - 2.0 * D_val;
+        //sigma2_prior = (width * width) / 12.0;
+        //sigma2_prior = (4000*4000) / (3.0*3.0);
+        sigma2_prior = (4000 * 4000) / 3.0;
     }
 
     Mat2 inv(const Mat2& m) const {
@@ -422,6 +357,33 @@ struct ModelMCMC : public BaseModel {
 
     void update_estimate(int len, edge_t edges) override {
         double obs_len = (double)len;
+
+        // ==========================================
+        // ログ出力機能
+        // ==========================================
+        #ifndef SUBMIT
+        double final_pred = current_predictions.back();
+        double expect_cost = 0;
+        REP(m, TOTAL_EDGES) {
+            if (edges[m]) expect_cost += edge_mean[m];
+        }
+        double progress = (double)(n_obs - 1) / K;
+        double gamma_val = 1.5 * pow(1.0 - progress, 2.0);
+
+        static double err_sum = 0.0;
+        err_sum += pow(obs_len - expect_cost, 2);
+
+        DEBUG("iter: {:3d} | expect: {:7.1f} | gamma: {:.3f} | GT: {:7.1f} | error: {:+7.1f} | err_sum: {:+7.1f}\n", 
+              n_obs - 1, expect_cost, gamma_val, obs_len, obs_len - expect_cost, err_sum);
+        #endif
+
+        // ==========================================
+        // スナップショット統計のためのリセット
+        // ==========================================
+        //seg_mean_n.fill(15.0);
+        seg_mean_n.fill(0.0);
+        //edge_mean.fill(0.0);
+
         double pred_len = 0;
         
         REP(seg, N_SEGS) {
@@ -438,8 +400,10 @@ struct ModelMCMC : public BaseModel {
                 PathData pd;
                 pd.path_id = n_obs;
                 pd.y_obs = obs_len;
-                //double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + 467777.778 * edges.count();
-                double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + (D*D / 3.0) * edges.count();
+                
+                // 【変更】解法Aに合わせた巨大ノイズ（1辺あたり±1000相当の分散）
+                //double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + 333333.33 * edges.count();
+                double sigma2_obs = pow(0.1 * obs_len, 2) / 3.0 + (D*D/3.0) * edges.count();
                 pd.var_obs_base = sigma2_obs;
                 
                 for (int k = 0; k <= 28; ++k) {
@@ -459,8 +423,10 @@ struct ModelMCMC : public BaseModel {
         current_predictions.push_back(pred_len);
         n_obs++;
 
-        //int n_samples = max(4, (int)(30 * pow(0.2, (double)n_obs / 1000.0)));
-        int n_samples = max(2, (int)(20 * pow(0.2, (double)n_obs / 1000.0)));
+        // 解法Aのスケジュール：序盤は10回、以降は2回
+        //int n_samples = (n_obs < 200) ? 10 : 2;
+        //int n_samples = 30;
+        int n_samples = 20;
         
         double inv_s2 = 1.0 / sigma2_prior;
         Mat2 A0 = {inv_s2, 0, 0, inv_s2};
@@ -478,6 +444,7 @@ struct ModelMCMC : public BaseModel {
                 REPi(k, 1, 29) {
                     Mat2 An = A0;
                     Vec2 bn = b0;
+                    double cn = 0.0;
                     
                     for (const auto& d : history[seg]) {
                         int l = d.cache.l[k];
@@ -492,6 +459,7 @@ struct ModelMCMC : public BaseModel {
                         An.d += w_inv * r * r;
                         bn.x += w_inv * y_res * l;
                         bn.y += w_inv * y_res * r;
+                        cn += w_inv * y_res * y_res / 2;
                     }
                     An.c = An.b;
 
@@ -499,7 +467,8 @@ struct ModelMCMC : public BaseModel {
                     if (detAn < 1e-9) continue;
                     Mat2 An_inv = inv(An);
                     double term1 = An_inv.a * bn.x * bn.x + (An_inv.b + An_inv.c) * bn.x * bn.y + An_inv.d * bn.y * bn.y;
-                    log_probs[k] = 0.5 * term1 - 0.5 * log(detAn);
+                    log_probs[k] = 0.5 * term1 - 0.5 * log(detAn) + cn;
+                    //log_probs[k] = 0.5 * term1 + 0.5 * log(detAn);
                 }
 
                 double max_log = -1e18;
@@ -545,10 +514,10 @@ struct ModelMCMC : public BaseModel {
                 Vec2 mu_post = {Sigma.a * bn.x + Sigma.b * bn.y, Sigma.c * bn.x + Sigma.d * bn.y};
                 Vec2 sample = sample_multivariate_normal(Sigma, mu_post);
                 
-                //x1[seg] = clamp(sample.x, 1000.0, 9000.0);
-                //x2[seg] = clamp(sample.y, 1000.0, 9000.0);
-                x1[seg] = sample.x;
-                x2[seg] = sample.y;
+                // 【変更】クリッピングを有効化 (Clamp)
+                // 巨大ノイズ下での発散を防ぐため、物理的にあり得ない値を制限する
+                x1[seg] = clamp(sample.x, 1000.0, 9000.0);
+                x2[seg] = clamp(sample.y, 1000.0, 9000.0);
 
                 for (const auto& d : history[seg]) {
                     double val = d.cache.l[new_z] * x1[seg] + d.cache.r[new_z] * x2[seg];
@@ -556,11 +525,13 @@ struct ModelMCMC : public BaseModel {
                 }
 
                 int offset = (seg < N_ROWS) ? (seg * SEG_LEN) : (M_GRID + (seg - N_ROWS) * SEG_LEN);
-                //double n = seg_mean_n[seg];
-                double n = 0;
+                double n = seg_mean_n[seg];
                 double next_n = n + 1.0;
 
                 REP(k, SEG_LEN) {
+                    double n = seg_mean_n[seg];
+                    double next_n = n + 1.0;
+
                     double val = (k < z[seg]) ? x1[seg] : x2[seg];
                     int edge_idx = offset + k;
                     
@@ -568,70 +539,178 @@ struct ModelMCMC : public BaseModel {
                     double dmean = (val - old_mean) / next_n;
                     double new_mean = old_mean + dmean;
                     
+                    // スナップショット分散を計算
                     double new_var = (n * edge_var[edge_idx] + (val - old_mean) * (val - new_mean)) / next_n;
-                    edge_var[edge_idx] = max(100.0, new_var);
+                    // 分散が小さすぎるとDijkstraで無視されるため、最低値を保証
+                    //edge_var[edge_idx] = max(100.0, new_var);
+                    edge_var[edge_idx] = max(0.0, new_var);
                     edge_mean[edge_idx] = new_mean;
+
+                    seg_mean_n[seg] = next_n; 
                 }
-                seg_mean_n[seg] = next_n; 
+                //seg_mean_n[seg] = next_n; 
             } 
         } 
-
-        // ==========================================
-        // ログ出力機能の追加
-        // ==========================================
-        #ifndef SUBMIT
-        // 最新の予測値 (サンプリング更新後)
-        double final_pred = current_predictions.back();
-        // 期待コスト（現在の平均モデルに基づく予測）
-        // ※正確には探索時に計算したdist[t]だが、ここでは現在のモデルでの経路長を再計算
-        double expect_cost = 0;
-        REP(m, TOTAL_EDGES) {
-            if (edges[m]) expect_cost += edge_mean[m];
-        }
-        
-        // Gamma (alpha) の計算 (solve関数と同じロジック)
-        double progress = (double)(n_obs - 1) / K;
-        double gamma_val = 1.5 * pow(1.0 - progress, 2.0);
-
-        DEBUG("iter: {:3d} | expect: {:7.1f} | gamma: {:.3f} | pred: {:7.1f} | GT: {:7.1f} | error: {:+7.1f}\n", 
-              n_obs - 1, expect_cost, gamma_val, final_pred, obs_len, obs_len - final_pred);
-        #endif
     }
 
-    double get_edge_weight(int dir, int y, int x) const override {
+    //double get_edge_weight(int dir, int y, int x) const override {
+    //    int idx = (dir == 0) ? (y * (N - 1) + x) : (M_GRID + x * (N - 1) + y);
+    //    return edge_mean[idx];
+    //}
+
+    // 現在のサンプル状態を直接返す
+    double get_edge_weight(int dir, int y, int x) const override
+    {
+        // セグメントIDの計算
+        int seg;
+        int k; // セグメント内のインデックス
+        if (dir == 0 || dir == 1)
+        { // 縦方向の移動は「列」のコストを見るか？
+            // ※注意: 問題文の定義に合わせてインデックスを計算してください。
+            // ここではコードの元のロジックに従います
+            // 元コード: (dir == 0) ? (y * (N - 1) + x) : (M_GRID + x * (N - 1) + y);
+            // 横辺(h): (i, j)-(i, j+1) -> 行iに依存 -> seg = i
+            // 縦辺(v): (i, j)-(i+1, j) -> 列jに依存 -> seg = N + j
+
+            if (dir == 0)
+            { // Right (横移動) ※元のコードのdir定義要確認
+                // 元のコード: get_path内で dir=0(R), 1(D), 2(L), 3(U)
+                // R/L は横辺、D/U は縦辺
+                // モデル内のインデックス計算と整合性を取る必要があります
+                seg = y;
+                k = x;
+            }
+            else
+            { // Down (縦移動)
+                seg = N + x;
+                k = y;
+            }
+        }
+
+        // 正確なマッピング（元の実装の get_edge_weight の idx 計算に基づく）
         int idx = (dir == 0) ? (y * (N - 1) + x) : (M_GRID + x * (N - 1) + y);
         return edge_mean[idx];
+        //int offset = (seg < N_ROWS) ? (seg * SEG_LEN) : (M_GRID + (seg - N_ROWS) * SEG_LEN);
+        //return edge_mean[offset + k];
+
+        //// idx から seg, k を逆算
+        //if (idx < M_GRID)
+        //{ // 横
+        //    seg = idx / (N - 1);
+        //    k = idx % (N - 1);
+        //}
+        //else
+        //{ // 縦
+        //    seg = N_ROWS + (idx - M_GRID) / (N - 1);
+        //    k = (idx - M_GRID) % (N - 1);
+        //}
+
+        //// トンプソンサンプリング: 現在のパラメータをそのまま返す
+        //return (k < z[seg]) ? x1[seg] : x2[seg];
     }
+
     double get_variance(int dir, int y, int x) const override {
         int idx = (dir == 0) ? (y * (N - 1) + x) : (M_GRID + x * (N - 1) + y);
         return edge_var[idx];
     }
 };
 
+void print_edge_weights(FILE* fp, const BaseModel& model) {
+    REP(i, 30) {
+        REP(j, 29) {
+            const auto w = model.get_edge_weight(0, i, j);
+            fprintf(fp, "%d ", (int)round(w));
+        }
+        fprintf(fp, "\n");
+    }
+    REP(i, 29) {
+        REP(j, 30) {
+            const auto w = model.get_edge_weight(1, i, j);
+            fprintf(fp, "%d ", (int)round(w));
+        }
+        fprintf(fp, "\n");
+    }
+}
+
 // ==========================================================
-// パス探索 (アンサンブル + LCB)
+// パス探索 (解法Aの探索アルゴリズムを移植)
 // ==========================================================
+struct DijkstraEntry {
+    double cost;
+    uint32_t tie_breaker;
+    int u; 
+
+    bool operator>(const DijkstraEntry& other) const {
+        if (cost != other.cost) return cost > other.cost;
+        return tie_breaker > other.tie_breaker; 
+    }
+};
+
 pair<vector<int>, edge_t> get_path(int src, int dst, 
                                    const vector<unique_ptr<BaseModel>>& models, 
                                    const vector<double>& weights, 
                                    int k) {
+#ifdef DEBUG_INPUT
+    // ==========================================
+    // デバッグ用: ファイルからパスを読み込む
+    // ==========================================
+    std::string s;
+    if (!(debug_ifs >> s)) {
+        std::cerr << "Error: Not enough paths in debug file." << std::endl;
+        exit(1);
+    }
+
+    vector<int> path;
+    edge_t edges;
+    int curr = src;
+    auto [cy, cx] = dec(curr); 
+
+    for (char c : s) {
+        int dir = -1;
+        if (c == 'R') dir = 0;
+        else if (c == 'D') dir = 1;
+        else if (c == 'L') dir = 2;
+        else if (c == 'U') dir = 3;
+        
+        if(dir != -1) {
+            path.push_back(dir);
+            int edge_idx = -1;
+            if (dir == 0) { edge_idx = cy * (N - 1) + cx; cx++; } 
+            else if (dir == 1) { edge_idx = M_GRID + cx * (N - 1) + cy; cy++; } 
+            else if (dir == 2) { cx--; edge_idx = cy * (N - 1) + cx; } 
+            else if (dir == 3) { cy--; edge_idx = M_GRID + cx * (N - 1) + cy; }
+
+            if (edge_idx != -1) edges.set(edge_idx);
+        }
+    }
+    return {path, edges};
+
+#else
+    // ==========================================
+    // 通常の探索ロジック（DEBUG_INPUT が無い時だけ有効）
+    // ==========================================
     vector<double> dist(N * N, 1e18);
     vector<int> prev_node(N * N, -1);
     vector<int> prev_dir(N * N, -1);
     
-    priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> pq;
+    priority_queue<DijkstraEntry, vector<DijkstraEntry>, greater<DijkstraEntry>> pq;
     dist[src] = 0;
-    pq.push({0, src});
+    pq.push({0.0, randxor(), src});
+
+    struct GammaParams {
+        //double gamma0 = 7.0; 
+        double gamma0 = 1.5; 
+        double gammap = 2.0; 
+    } gamma_params;
 
     double progress = (double)k / K;
-    double alpha = 1.5 * pow(1.0 - progress, 2.0);
+    double current_gamma = gamma_params.gamma0 * pow(1.0 - progress, gamma_params.gammap);
 
     while (!pq.empty()) {
-        auto [d, u] = pq.top();
+        auto [d, _, u] = pq.top();
         pq.pop();
         if (d > dist[u]) continue;
         if (u == dst) break;
-
         auto [y, x] = dec(u);
 
         REP(dir, 4) {
@@ -645,22 +724,20 @@ pair<vector<int>, edge_t> get_path(int src, int dst,
             if (dir == 3) ty = y - 1; 
             int q_dir = (dir == 2) ? 0 : (dir == 3 ? 1 : dir);
             
-            double combined_weight = 0.0;
+            double combined_cost = 0.0;
             for(size_t i=0; i<models.size(); ++i) {
-                if(weights[i] < 1e-4) continue; 
-
+                if(weights[i] < 1e-4) continue;
                 double mu = models[i]->get_edge_weight(q_dir, ty, tx);
                 double sigma = sqrt(max(0.0, models[i]->get_variance(q_dir, ty, tx)));
-                double lcb = max(10.0, mu - alpha * sigma);
-                
-                combined_weight += weights[i] * lcb;
+                combined_cost += weights[i] * (mu - current_gamma * sigma);
             }
+            combined_cost = max(0.0, combined_cost);
 
-            if (dist[v] > dist[u] + combined_weight) {
-                dist[v] = dist[u] + combined_weight;
+            if (dist[v] > dist[u] + combined_cost) {
+                dist[v] = dist[u] + combined_cost;
                 prev_node[v] = u;
                 prev_dir[v] = dir;
-                pq.push({dist[v], v});
+                pq.push({dist[v], randxor(), v});
             }
         }
     }
@@ -672,39 +749,28 @@ pair<vector<int>, edge_t> get_path(int src, int dst,
         int dir = prev_dir[curr];
         int prev = prev_node[curr];
         path.push_back(dir);
-        
         auto [py, px] = dec(prev);
         int edge_idx = -1;
         if (dir == 0) edge_idx = py * (N - 1) + px;
         else if (dir == 1) edge_idx = M_GRID + px * (N - 1) + py;
         else if (dir == 2) edge_idx = py * (N - 1) + (px - 1);
         else if (dir == 3) edge_idx = M_GRID + px * (N - 1) + (py - 1);
-        
         if(edge_idx != -1) edges.set(edge_idx);
         curr = prev;
     }
     reverse(ALL(path));
     return {path, edges};
+#endif
 }
 
 void solve(const double end_time) {
     vector<unique_ptr<BaseModel>> models;
     
-    //// --- Model Definition ---
-    //models.push_back(make_unique<Model<1>>(600)); 
-    //models.push_back(make_unique<Model<1>>(1200)); 
-    //models.push_back(make_unique<Model<2>>(600)); 
-    //models.push_back(make_unique<Model<2>>(1200)); 
-    
-    //models.push_back(make_unique<ModelEdge>(Structure::M1, 750));
-    
-    //// MCMCの代理となるモデル
-    //models.push_back(make_unique<ModelEdge>(Structure::M2, 750));
-    //models.push_back(make_unique<ModelEdge>(Structure::M2, 350)); 
-    
     // MCMCモデル
-    models.push_back(make_unique<ModelEdge>(Structure::M2, 300));
-    models.push_back(make_unique<ModelMCMC>(300)); 
+    models.push_back(make_unique<ModelEdge>(Structure::M2, 300)); // M2はウェイト計算用に残す
+    models.push_back(make_unique<ModelMCMC>(300));
+
+    FILE* fp = fopen("edge_weights.txt", "w");
 
     Query query;
     REP(k, K) {
@@ -737,56 +803,49 @@ void solve(const double end_time) {
         double mcmc_prob = 0.0;
         REP(i, models.size()) {
             if (models[i]->type == Structure::M2) {
-                mcmc_prob += weights[i];
+                // Swap logic: M2のウェイトをMCMCへ委譲し、M2自身は探索に参加させない
+                swap(mcmc_prob, weights[i]);
             }
         }
-        // D=350や750のM2モデルの重みもMCMCの信頼度として加算する（記事の推奨）
-        // D=170ドンピシャがなくても、M2構造であること自体が重要
-        REP(i, models.size()) {
-            if (models[i]->type == Structure::M2) {
-                mcmc_prob += weights[i]; // 加算（重複しないように注意が必要だが、ここでは単純加算で良いか確認）
-                // 上で D==170 の判定をしているが、モデル定義に D=170 のKFはないので、
-                // 実質的に全ての M2 モデルの合計値を MCMC の重みにするのが良い。
-            }
-        }
-        // 重複加算バグを防ぐため、リセットして再計算
-        mcmc_prob = 0.0;
-        REP(i, models.size()) {
-            if (models[i]->type == Structure::M2) {
-                mcmc_prob += weights[i];
-            }
-        }
-
+        
         REP(i, models.size()) {
             if (models[i]->type == Structure::MCMC) {
                 weights[i] = mcmc_prob; 
             }
         }
         
-        #ifndef SUBMIT
-        int best_idx = 0; double max_w = -1.0;
-        REP(i, weights.size()) if(weights[i] > max_w) { max_w = weights[i]; best_idx = i; }
-        string type_s = "Grid";
-        if(models[best_idx]->type == Structure::M1) type_s = "M1";
-        if(models[best_idx]->type == Structure::M2) type_s = "M2";
-        if(models[best_idx]->type == Structure::MCMC) type_s = "MCMC";
-        DEBUG("k={:3d} | Main: {:4s}, n={}, D={:<4} (w={:.2f}) | MCMC_P={:.2f}\n", 
-              k, type_s, models[best_idx]->n_vars, models[best_idx]->D, max_w, mcmc_prob);
-        #endif
-
         const auto [path, edges] = get_path(s, t, models, weights, k);
         const auto len = query.put_path(path);
         
         for (auto& model : models) {
             model->update_estimate(len, edges);
         }
+
+        // for debug
+        for (auto& model : models) {
+            if (model->type == Structure::MCMC) {
+                print_edge_weights(fp, *model);
+            }
+        }
     }
+
+    fclose(fp);
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]){
     ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
+
+#ifdef DEBUG_INPUT
+    debug_ifs.open(DEBUG_FILENAME);
+    if (!debug_ifs) {
+        std::cerr << "Error: Could not open debug file: " << DEBUG_FILENAME << std::endl;
+        return 1;
+    }
+#endif
+
     solve(Env::time_limit);
+    
     DEBUG("time : {}\n", timer.get_time());
     return 0;
-}
+    }
